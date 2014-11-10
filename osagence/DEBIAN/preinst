@@ -1,0 +1,5 @@
+#! /bin/bash
+
+# Script SHELL exécuté avant l'installation du paquet DEBIAN
+
+

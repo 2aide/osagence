@@ -1,0 +1,99 @@
+#!/bin/bash
+##
+
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+wmctrl -a "OSa manager"
+if [ $? == "0" ]; then
+	{
+		exit 0
+	}
+fi
+
+## On récupère les emplacements des répertoires de travail de OSagence
+eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+
+## On vérifie l'existence des paramètres secrets (non fournis aux négociateurs)
+if [ ! -e "${rept}/conf/osa-sec.cfg" ]; then
+	{
+		exit 0
+	}
+fi
+
+while true
+do
+	
+				export MAIN_DIALOG='<window title="OSa manager" window_position="1" decorated="true">
+											<vbox>
+												<hbox>
+													<pixmap>
+														<width>48</width>
+														<input file>/usr/share/osagence/pixmaps/osa-manager.png</input>
+													</pixmap>
+													<text>
+														<label>"___OSagence Manager___"</label>
+													</text>
+												</hbox>
+												<hbox>
+													<pixmap>
+														<width>48</width>
+														<input file>/usr/share/osagence/pixmaps/osa-config.png</input>
+													</pixmap>
+													<button>
+														<label>"____Config. générale____"</label>
+													</button>
+												</hbox>
+												<hbox>
+													<pixmap>
+														<width>48</width>
+														<input file>/usr/share/osagence/pixmaps/osa-import.png</input>
+													</pixmap>
+													<button>
+														<label>"____Import de fiches____"</label>
+													</button>
+												</hbox>
+												<hbox>
+													<button>
+														<label>"Quitter"</label>
+													</button>
+												</hbox>
+											</vbox>
+												
+										</window>'
+										
+									eval $(gtkdialog --program=MAIN_DIALOG)
+							
+	if [ "${EXIT}" == "____Config. générale____" ]; then
+		{
+			/usr/share/osagence/osa-config
+		}
+	elif [ "${EXIT}" == "____Import de fiches____" ]; then
+		{
+			/usr/share/osagence/osa-import
+		}
+	else
+		{
+			exit 0
+		}
+	fi
+done
+exit 0

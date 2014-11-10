@@ -1,0 +1,7 @@
+#! /bin/bash
+
+ln -s /usr/share/osa-villes/osa-ville /usr/bin/osa-ville
+
+exit 0
+
+

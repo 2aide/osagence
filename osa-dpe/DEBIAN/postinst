@@ -1,0 +1,7 @@
+#! /bin/bash
+
+ln -s /usr/share/osa-dpe/osa-gui-dpe /usr/bin/osa-gui-dpe
+
+exit 0
+
+

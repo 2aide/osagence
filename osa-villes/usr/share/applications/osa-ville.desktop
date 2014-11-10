@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=0.02.00
+Name=OSa-ville
+GenericName=Les codes postaux de France
+Comment=Base de données code postaux
+Exec=/usr/bin/osa-ville
+Terminal=false
+X-MultipleArgs=false
+Type=Application
+Icon=osa-ville
+Categories=Office;Publishing;
+MimeType=script shell (application/x-shellscript);
+StartupWMClass=osa-ville
+StartupNotify=true
+Name[fr]=osa-ville
+Name[fr_FR]=osa-ville

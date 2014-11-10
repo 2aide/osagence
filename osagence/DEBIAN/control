@@ -1,0 +1,14 @@
+Package: osagence
+Version: 0.02.05
+Section: office
+Priority: optional
+Depends: imagemagick, gtkdialog, wmctrl, lftp, zenity, xdg-utils, curl, zip, osa-dpe, osa-villes
+Architecture: all
+Maintainer: Olivier Pont, 2aide <contact@2aide.fr>
+Installed-Size: 6700
+Homepage: http://www.agence-libre.fr
+Description: osagence, un outil de gestion d'agences immobilières.
+ Transfert vers le site Internet de l agence.
+ Gestion des biens, création des affiches.
+ Diffusion du catalogue vers divers sites d annonces immobilières.
+

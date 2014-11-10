@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=0.02.04
+Name=OSa-menu
+GenericName=Agence immobilière libre
+Comment=Gestion portefeuille et site web agence immobilière
+Exec=/usr/bin/osa-menu
+Terminal=false
+X-MultipleArgs=false
+Type=Application
+Icon=osagence
+Categories=Office;Publishing;
+MimeType=script shell (application/x-shellscript);
+StartupWMClass=osa-menu
+StartupNotify=true
+Name[fr]=osa-menu
+Name[fr_FR]=osa-menu

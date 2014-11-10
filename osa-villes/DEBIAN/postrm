@@ -1,0 +1,6 @@
+#! /bin/bash
+
+# Script SHELL exécuté après la désinstallation du paquet DEBIAN
+rm -f /usr/bin/osa-ville
+exit 0
+

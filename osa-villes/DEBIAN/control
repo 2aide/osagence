@@ -1,0 +1,12 @@
+Package: osa-villes
+Version: 0.02.00
+Section: office
+Priority: optional
+Depends: wmctrl, zenity
+Architecture: all
+Maintainer: Olivier Pont, 2aide <contact@2aide.fr>
+Installed-Size: 5400
+Homepage: http://www.agence-libre.fr
+Description: osa-ville, un outil OSagence.
+ Correspondances villes codes postaux.
+

@@ -1,0 +1,6 @@
+<item>"EN, anglais"</item>
+<item>"ES, espagnol"</item>
+<item>"DE, allemand"</item>
+<item>"IT, italien"</item>
+<item>"NL, néerlandais"</item>
+<item>"PT, portugais"</item>

@@ -1,0 +1,2559 @@
+#!/bin/bash
+##
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+## OSagence, logiciel libre de gestion d'agence immobilière
+## Version =0.02.00
+
+## Reprise du focus sur la fenêtre en cours si OSagence déjà lancé
+wmctrl -a "OSagence, entrez un nouveau bien ou..."
+if [ $? == "0" ]; then
+	{
+		exit 0
+	}
+fi
+
+wmctrl -a "OSagence, données relatives au bien."
+if [ $? == "0" ]; then
+	{
+		exit 0
+	}
+fi
+
+wmctrl -a Informations supplémentaires
+if [ $? == "0" ]; then
+	{
+		exit 0
+	}
+fi
+
+wmctrl -a "OSagence, données non publiques relatives au bien."
+if [ $? == "0" ]; then
+	{
+		exit 0
+	}
+fi
+
+## On récupère les emplacements des répertoires de travail de OSagence
+eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+
+## Lecture de la configuration
+eval $(grep -v "^#" "${rept}/conf/osa.cfg")
+
+if [ -e "${rept}/conf/osa-url.cfg" ]; then
+	{
+		eval $(grep -v "^#" "${rept}/conf/osa-url.cfg")
+	}
+fi
+
+fonct=""
+if [ -e "${rept}/conf/osa-sec.cfg" ]; then
+	{
+		eval $(grep -v "^#" "${rept}/conf/osa-sec.cfg")
+	}
+else
+	{
+		fonct="nego"
+	}
+fi
+
+## On vérifie qu'il n'y ai pas d'autre instance de ce script en cours, et on propose de la stopper le cas échéant
+if [ -s /tmp/.LOCK ]; then
+	{
+		strept=$( echo ${rept%/} | sed "s;$HOME;\$HOME;g")
+		echo "#!/bin/bash
+		##
+
+		rm /tmp/.LOCK
+		killall osagence
+		rm -f ${strept}/conf/stop.sh
+		exit 0" > ${rept}/conf/stop.sh
+
+		chmod +rx ${rept}/conf/stop.sh
+		timeout 20 zenity --question --ok-label="Réinitialiser" --text="Un processus OSagence est déjà en cours.\nVoulez-vous le réinitialiser ?" || exit 0
+		timeout 20 zenity --question --ok-label="Stop" --text="Vous allez tuer un processus OSagence.\nÊtes-vous sûr ?" | exit 0
+		${rept}/conf/stop.sh
+		exit 0
+	}
+fi
+
+## Création du fichier de verrouillage ne permettant qu'une instance unique, gére aussi l'abandon volontaire avant la fin du script
+echo "rm /tmp/.LOCK; exit 0" > /tmp/.LOCK
+
+## Création de la variable répertoire de travail avec les caractères d'échappement
+reptsed=$(echo ${rept} | sed 's/\//\\\//g' | sed 's/\./\\\./g')
+
+## Indication de la dernière synchro réalisée
+if [ -s "${rept1}/date-sync.temps" ] && [[ "${fonct}" != "nego" ]]; then
+	{
+		timeout 15 zenity --info --text="$(cat ${rept1}/date-sync.temps)"
+	}
+fi
+
+## Boucle infinie pour relancer le script après chaque opération complétée
+while true
+		do
+		
+		## vérification de la synchronisation du PC
+		if [ -e /tmp/osagence-lock ]; then
+			{
+				if [ "$(cat /tmp/osagence-lock)" == "lock" ]; then
+					{
+						zenity --warning --text="La synchronization de votre PC est en cours.\nVeuillez quitter et retenter dans quelques minutes."
+					}
+				else
+					{
+						zenity --warning --text="La synchronization de votre PC est actuellement impossible.\nVérifiez votre connexion à internet."
+					}
+				fi
+				eval $(cat /tmp/.LOCK)
+			}
+		fi
+		
+
+		## On initialise les variables tableau
+		unset gr
+		unset pix
+		unset pixs
+		unset visu
+		ref=""
+			
+			## Vérification/création du répertoire ID
+			if [ ! -d "${rept1}/ID" ]; then
+				{
+					mkdir -p "${rept1}/ID"
+				}
+			fi
+	
+			## Vérification de présence d'une erreur de transfert précédente
+			for chk in $(ls -a ${rept}/conf/.tmp | grep ".id" | grep -v "^Copy"); do
+				if [ "${chk}" == "$(ls -a ${rept1}/ID | grep '.id')" ]; then
+					{
+						ref="$(cat ${rept}/conf/.tmp/${chk})"
+						zenity --warning --text="Vous avez tenté de créer ou de modifier le bien ${ref}\nLa syncronisation ne s est pas effectuée correctement.\nVous devez retransférer ce bien."
+					}
+				fi
+			done
+		while true
+		do	
+			## recuperation de la reference de la derniere fiche et incrementation
+			if [ "${ref}" == "" ]; then
+				{
+					ref=$(ls -h "${rept}/catalogue/fiches" | grep ^[0-9]* -o | tail -1 | sed 's/^0*//g')
+					((ref++))
+					
+					
+					refa=$(ls -h "${rept}/catalogue/privees" | grep ^[0-9]* -o | tail -1 | sed 's/^0*//g')
+					((refa++))
+
+					if [ "${ref}" -gt "${refa}" ]; then
+						{
+							ref="$(echo '00000' | cut -c1-$((5-${#ref})))${ref}"
+						}
+					else
+						{
+							ref="$(echo '00000' | cut -c1-$((5-${#refa})))${refa}"
+						}
+					fi
+				}
+			fi
+			
+			eval $(grep "picorg" "${rept}/conf/osa.cfg")
+			picorg1="<checkbox active=\"${picorg}\">"
+		
+			## On indique la référence du bien, ou on préfère le choisir visuellement
+			export MAIN_DIALOG='<window title="OSagence, entrez un nouveau bien ou..." decorated="true" window_position="1" icon-name="gtk-home">
+										<vbox>
+										<hbox>
+										<vbox>
+										<hbox>
+											<pixmap>
+												<input file>/usr/share/osagence/pixmaps/OSagence.png</input>
+											</pixmap>
+											<text>
+												<label>"ID"</label>
+											</text>
+											<entry>
+												<variable>ref</variable>
+												<width>300</width><height>25</height>
+												<default>'"${ref}"'</default>
+												<action signal="activate">exit:'"Créer Modifier ce bien"'</action>
+											</entry>
+										</hbox>
+										<hbox>
+											'${picorg1}'
+											<variable>picorg</variable>
+											<label>"Cochez pour garder les photos originales."</label>
+										</checkbox>
+										</hbox>
+										<text>
+											<label>"Utilisez uniquement des chiffres."</label>
+										</text>
+										</vbox>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Quitter"</label>
+											</button>
+											<button>
+												<label>"Créer Modifier ce bien"</label>
+											</button>
+											<button>
+												<label>"Voir les biens."</label>
+											</button>
+										</hbox>
+										</vbox>
+										<action signal="delete-event">exit:"Quitter"</action>
+									</window>'
+
+			eval $(gtkdialog --program=MAIN_DIALOG)
+						
+			## On quitte si on a choisi annuler
+			if [ "${EXIT}" == "Quitter" ]; then
+				{
+					eval $(cat /tmp/.LOCK)
+				}
+			fi
+			
+			## On formate le n° de mandat
+			if [ "${#ref}" -lt "5" ]; then
+				{
+					ref="$(echo '00000' | tail -c 6 | cut -c1-$((5-${#ref})))${ref}"
+				}
+			else
+				{
+					ref="$(echo ${ref} | tail -c 6 )"
+				}
+			fi
+			
+			## Vérification et synchronisation de la fiche en cours de création et ou de modification si utilisation de la version complète et non négociateurs
+			if [[ "${fonct}" != "nego" ]]; then
+				{
+					lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e /fiches/${ref}/ ${rept}/catalogue/fiches/${ref}/ ; mirror -e /privees/${ref}/ ${rept}/catalogue/privees/${ref}/ ; quit"
+				}
+			fi
+			
+			## On sauvegarde le choix de conserver ou non les photos originales
+			sed -i "s/picorg=\".*\"/picorg=\"${picorg}\"/g" "${rept}/conf/osa.cfg"
+			
+			## Vérification de l'absence de doublon dans fiches Privées et Publiques
+			if [ -d ${rept}/catalogue/fiches/${ref} ] && [ -d ${rept}/catalogue/privees/${ref} ] ; then
+				{
+					## Si doublons et si utilisation de la version complète et non négociateurs on regarde quelle est la fiche (privée ou publique) présente sur le site
+					if [ -e "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt" ] && [ -e "${rept}/catalogue/privees/${ref}/data/.var-${ref}.txt" ] && [[ "${fonct}" != "nego" ]]; then
+						{
+							curl -f "${url}privees/${ref}/data/.var-${ref}.php" >> /dev/null && privee="OK"
+							curl -f "${url}fiches/${ref}/data/.var-${ref}.php" >> /dev/null && fiche="OK"
+							
+							## Si pas de fiche privée sur le site mais fiche publique présente on supprime la fiche privée locale
+							if [ "${privee}" != "OK" ] && [ "${fiche}" == "OK" ]; then
+								{
+									rm -f -r "${rept}/catalogue/privees/${ref}"
+								}
+							fi
+							
+							## Si pas de fiche publique sur le site mais fiche privée présente on supprime la fiche publique locale
+							if [ "${privee}" == "OK" ] && [ "${fiche}" != "OK" ]; then
+								{
+									rm -f -r "${rept}/catalogue/fiches/${ref}"
+								}
+							fi
+							
+							privee=""
+							fiche=""
+						}
+					fi
+					
+					## Si un doublon privé public existe encore on prévient puis on quitte pour correction manuelle
+					if [ -d ${rept}/catalogue/fiches/${ref} ] && [ -d ${rept}/catalogue/privees/${ref} ] ; then
+						{
+							zenity --warning --text="Ce bien existe dans les fiches privées et publiques.\nVous devez corriger."; eval $(cat /tmp/.LOCK)
+						}
+					fi
+				}
+			fi
+		
+			## On quitte si on a choisi annuler
+			#if [ "${EXIT}" == "Quitter" ]; then
+				#{
+					#eval $(cat /tmp/.LOCK)
+				#}
+			#fi
+			
+						
+			## Si la réf existe on propose d'en prendre une autre ou de modifier l'existente	
+			if [ "${ref}" == "$(ls -h "${rept}/catalogue/fiches" | grep "${ref}" )" ] || [ "${ref}" == "$(ls -h "${rept}/catalogue/privees" | grep "${ref}" )" ] ; then
+				{
+					zenity --question --ok-label="Changer de réf" --text="La référence existe déjà.\nVoulez-vous en choisir une autre?" && ref=""
+				}
+			fi
+			
+			## On vérifie que le bien ne soit pas en cours de modification sur un autre poste
+			for ident in $(ls -a ${rept}/conf/.tmp | grep ".id" | grep -v "^Copy"); do
+				if [ "${ref}" == "$(cat ${rept}/conf/.tmp/${ident})" ] && [ "${ident}" != "$(ls -a ${rept1}/ID | grep '.id')" ]; then
+					{
+						zenity --warning --text="Le bien ${ref} est en cours de modification par $(echo ${ident} | cut -d- -f1)\nVeuillez choisir une autre référence ou fermer et réouvrir OSagence pour forcer la synchronisation."
+						ref=""
+					}
+				fi
+			done
+			## On vérifie le format numérique de la référence
+			if [[ "${ref}" != "" ]] && [[ "${ref}" =~ ^[[:digit:]]+$ ]]; then
+				{
+					break
+				}
+			fi
+		done
+		
+		## On crée la variable référence si on a choisi de visualiser la fiche
+		if [ "${EXIT}" == "Voir les biens." ]; then
+			{
+				ref=""
+			}
+		fi
+
+		## On affiche la fiche si on a choisi visualiser
+		if [ -z "${ref}" ]; then
+			{
+				EXIT=""
+				## Bouclage de la visualisation des fiches jusqu'à ce qu'une référence ait été sélectionnée
+				while [ -z "${ref}" ]
+				do
+					if [ "${EXIT}" != "Non public" ]; then
+						{
+							## On se place dans la répertoire des fiches
+							cd ${rept}/catalogue/fiches
+
+							## Choix de la fiche à afficher
+							export MAIN_DIALOG='<window title="OSagence, choisir un bien public." decorated="true" window_position="1" icon-name="gtk-home">
+							<vbox>
+								<entry primary-icon-name="view_folder"
+								accept="filename" activates-default="true" fs-folder="'${rept}/catalogue/fiches/'" fs-action="folder" 
+								show-hidden="false" fs-title="Choisissez un bien public."
+								primary-icon-tooltip-text="Cliquez sur un répertoire.">
+									<variable>choix</variable>
+									<width>400</width>
+									<height>25</height>
+									<action signal="show">fileselect:choix</action>
+									<action signal="changed">refresh:choix</action>
+								</entry>
+							  <hbox>
+								<button>
+									<label>"Quitter"</label>
+								</button>
+								<button>
+									<label>"Non public"</label>
+								</button>
+								<button ok></button>
+							  </hbox>
+							</vbox>
+							<action signal="delete-event">exit:Quitter</action>
+						</window>'
+
+							eval $(gtkdialog --program=MAIN_DIALOG)
+							
+							## On quitte si on a choisi de quitter
+							if [ "${EXIT}" == "Quitter" ]; then
+								{
+									eval $(cat /tmp/.LOCK)
+								}
+							fi
+							
+							## Vérification et synchronisation de la fiche en cours de création et ou de modification si utilisation de la version complète et non négociateurs
+							if [[ "${fonct}" != "nego" ]]; then
+								{
+									lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e /fiches/${choix##*/}/ ${rept}/catalogue/fiches/${choix##*/}/ ; quit"
+								}
+							fi
+							
+							## On vérifie que le bien ne soit pas en cours de modification sur un autre poste
+							for ident in $(ls -a ${rept}/conf/.tmp | grep ".id" | grep -v "^Copy"); do
+								if [ "${choix##*/}" == "$(cat ${rept}/conf/.tmp/${ident})" ]; then
+									{
+										zenity --warning --text="Le bien ${choix##*/} est en cours de modification par $(echo ${ident} | cut -d- -f1)\nveuillez choisir une autre référence."
+										choix=""
+									}
+								fi
+							done
+						}
+					else
+						{
+							## On se place dans la répertoire des fiches non publics
+							cd ${rept}/catalogue/privees
+
+							## Choix de la fiche à afficher
+							export MAIN_DIALOG='<window title="OSagence, choisir un bien non public.." decorated="true" window_position="1" icon-name="gtk-home">
+							<vbox>
+							  <entry primary-icon-name="view_folder"
+								accept="filename" activates-default="false" fs-folder="'${rept}/catalogue/privees/'" fs-action="folder" 
+								show-hidden="false" fs-title="Choisissez un bien public."
+								primary-icon-tooltip-text="Cliquez sur un répertoire.">
+									<variable>choix</variable>
+									<width>400</width>
+									<height>25</height>
+									<action signal="show">fileselect:choix</action>
+									<action signal="changed">refresh:choix</action>
+								</entry>
+							  <hbox>
+								<button>
+									<label>"Quitter"</label>
+								</button>
+								<button>
+									<label>"Public"</label>
+								</button>
+								<button ok></button>
+							  </hbox>
+							</vbox>
+							<action signal="delete-event">exit:"Quitter"</action>
+						</window>'
+
+							eval $(gtkdialog --program=MAIN_DIALOG)
+							
+							
+							## On quitte si on a choisi de quitter
+							if [ "${EXIT}" == "Quitter" ]; then
+								{
+									eval $(cat /tmp/.LOCK)
+								}
+							fi
+							
+							## Vérification et synchronisation de la fiche en cours de création et ou de modification si utilisation de la version complète et non négociateurs
+							if [[ "${fonct}" != "nego" ]]; then
+								{
+									lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e /privees/${choix##*/}/ ${rept}/catalogue/privees/${choix##*/}/ ; quit"
+								}
+							fi
+			
+							## On vérifie que le bien ne soit pas en cours de modification sur un autre poste
+							for ident in $(ls -a ${rept}/conf/.tmp | grep ".id" | grep -v "^Copy"); do
+								if [ "${choix##*/}" == "$(cat ${rept}/conf/.tmp/${ident})" ]; then
+									{
+										zenity --warning --text="Le bien ${choix##*/} est en cours de modification par $(echo ${ident} | cut -d- -f1)\nveuillez choisir une autre référence."
+										choix=""
+									}
+								fi
+							done
+
+							## Si un choix à été fait
+							if [ -n "${choix}" ]; then
+								{
+									## On vérifie que le répertoire choisi porte le nom d'une référence (numérique)
+									if [[ "${choix##*/}" =~ ^[[:digit:]]+$ ]]; then
+										{
+											## On déplace la fiche privée dans le répertoire de travail
+											mv ${rept}/catalogue/privees/${choix##*/} ${rept}/catalogue/fiches/${choix##*/}
+
+											## On transforme le chemin de la fiche privée choisie pour qu'il pointe vers le répertoire de travail
+											choix="${rept}/catalogue/fiches/${choix##*/}"
+										}
+									fi
+								}
+							fi
+						}
+					fi
+
+					## Préparation de l'affichage de la fiche
+					## Si un choix à été fait
+					if [ -n "${choix}" ]; then
+						{
+							## On vérifie que le répertoire choisi porte le nom d'une référence (numérique)
+							if [[ "${choix##*/}" =~ ^[[:digit:]]+$ ]]; then
+								{
+									## Création de la liste des photos 5 premières photos à afficher
+									cpt1=0
+									if [[ -n $(ls -v ${rept}/catalogue/fiches/${choix##*/}/thumb | grep ".jpg" | grep -v "\-0.jpg" | grep -v "\-0g.jpg") ]]; then
+										{
+											## Si des photos sont déjà présente on prépare leur affichage avec la mise en page adéquate
+											for phot in $(ls -v ${rept}/catalogue/fiches/${choix##*/}/thumb | grep ".jpg" | grep -v "\-0.jpg" | grep -v "\-0g.jpg"); do
+												
+												label=$(echo ${phot%.*} | cut -d- -f2)
+
+												visu[$cpt1]="<pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${choix##*/}/thumb/${phot}\"</input></pixmap>"
+												((cpt1++))
+													
+												if [ "${cpt1}" == "5" ]; then
+													{
+														break
+													}
+												fi
+											done
+											
+											## Sélection des valeurs affichées dans l'aperçu rapide
+											grep "a005=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2 > "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											grep "a006=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2 >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											grep "a020=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2 >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											grep "a003=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2 >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											echo "prix HT: $(grep "a011=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2)" >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											echo "Honoraires: $(grep "a015=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2)"  >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											echo "public: $(grep "pub=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2)" >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											echo "en vente: $(grep "vent=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2)" >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											echo "coup de coeur: $(grep "a084=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2)" >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											echo "négociateur: $(grep "a123=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2)" >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											grep "a114=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2 >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											grep "a115=" "${rept}/catalogue/fiches/${choix##*/}/data/.var-${choix##*/}.txt" | cut -d\" -f2 >> "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+											
+											## Affichage de la fiche
+											export MAIN_DIALOG='<window title="OSagence, aperçu de bien choisi." decorated="true" window_position="1" icon-name="gtk-home">
+											<vbox>
+											<hbox>
+											'${visu[@]}'
+											</hbox>
+											<frame "Aperçu du bien n° ${choix##*/}">
+												<text>
+													<input file>'${rept}'/catalogue/fiches/'${choix##*/}'/tmp/.var-court-'${choix##*/}'.txt</input>
+												</text>
+											</frame>
+											<hbox>
+												<button>
+													<label>"Autre bien"</label>
+												</button>
+												<button>
+													<label>"Modifier ce bien"</label>
+												</button>
+											</hbox>
+											</vbox>
+											<action signal="delete-event">exit:'"Autre bien"'</action>
+										</window>'
+
+											eval $(gtkdialog --program=MAIN_DIALOG)
+											
+											rm -f "${rept}/catalogue/fiches/${choix##*/}/tmp/.var-court-${choix##*/}.txt"
+
+											## Suppression du bien après vérification
+											if [ "${EXIT}" == "Supprimer ce bien" ]; then
+												{
+													zenity --question --text="Vous allez supprimer ce bien # ${choix##*/}.\nÊtes-vous sûr, toutes les photos seront perdues."
+													supp=$?
+
+													if [ "${supp}" == "0" ]; then
+														{
+															## On supprime la fiche
+															rm -f -r ${rept}/catalogue/fiches/${choix##*/}
+															
+															## Choix de suppression sur le site distant de la fiche supprimée localement si utilisation de la version complète et non négociateurs
+															if [[ "${fonct}" != "nego" ]]; then
+																{
+																	zenity --question --title="Synchronisation Web" --text="Vous venez de supprimer le bien localement #${choix##*/}.\nVoulez-vous le supprimer sur le site web également?"
+
+																	supp1=$?
+
+																	if [ "${supp1}" == "0" ]; then
+																		{
+																			export MAIN_VIEWER_MOD_WAIT='<window title="viewer_wait_ft1" window_position="1" decorated="false">
+																											<vbox>
+																												<pixmap>
+																												<input file>/usr/share/osagence/pixmaps/transfer.gif</input>
+																												</pixmap>
+																												<text>
+																													<label>"Suppression du bien en ligne n° ${choix##*/}"</label>
+																												</text>
+																											</vbox>
+																										</window>'
+																			#Lancer logo
+																			gtkdialog --program=MAIN_VIEWER_MOD_WAIT&
+																			
+																			## Transfert de la fiche vers le site web
+																			lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "rm -rf /fiches/${choix##*/} ; quit"
+																			## lftp ftp://${ftpus}:${ftpmdp}@${ftpserv}  -e "put -O \"/protege\" \"${rept}/catalogue/protege/coeur.txt\"; quit"
+																			
+																			## On reset l'image de progression
+																			wmctrl -c viewer_wait_ft1
+																			
+																			## On prévient de la fin de l'opération
+																			zenity --info --title="Transfert" --text="L'opération est terminée"
+																		}
+																	fi
+																}
+															fi
+														}
+													fi
+												}
+											else
+												{
+													supp=""
+												}
+											fi
+
+											## Si on à choisi de modifier le bien, on inscrit le n° du bien choisi dans la variable référence
+											if [ "${EXIT}" == "Modifier ce bien" ]; then
+												{
+													ref=${choix##*/}
+												}
+											fi
+										}
+									fi
+								}
+							fi
+						}
+					fi
+				done
+			}
+		fi
+
+		if [ -n "${ref}" ]; then
+			{
+				## on créé un fichier temporaire de vérification sur la référence en cours
+				tloc="$(ls -a ${rept1}/ID/ | grep '.id')"
+				echo "${ref}" > "${rept}/conf/.tmp/${tloc}"
+				
+				## on force la synchronisation si on est en multi-postes avec un répertoire partagé si utilisation de la version complète et non négociateurs
+				if [[ "${fonct}" != "nego" ]]; then
+					{
+						eval "${sync}"
+					}
+				fi
+				
+				## On déplace la fiche dans le répertoire de travail (celui des fiches publiques)
+				if [ -d ${rept}/catalogue/privees/${ref} ]; then
+					{
+						mv ${rept}/catalogue/privees/${ref} ${rept}/catalogue/fiches/${ref}
+					}
+				fi
+
+				## On verifie si la fiche produit existe, et si sa taille est cohérante, sinon on la supprime
+				if [ -s ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt ]; then
+					{
+						if [[ $(stat -c "%s" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt") < "100" ]]; then
+							{
+								rm -f ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+							}
+						fi
+					}
+				fi
+
+				## On prévient que la fiche produit existe déjà et on demande si on souhaite la modifier
+				if [ -e ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt ]; then
+					{
+						## Cas ou la fiche existe
+						if [ "${EXIT}" == "Modifier ce bien" ]; then
+							{
+								zenity --question --title="Le bien existe." --text="Ce bien existe déjà, voulez-vous le modifier ?" || eval $(cat /tmp/.LOCK)
+							}
+						fi
+						## On crée les répertoires pour cette référence (ne fait rien si ils existent)
+						mkdir -p ${rept}/catalogue/fiches/${ref}/{thumb,tmp,data}
+					}
+				else
+					{
+						## cas ou la fiche n'existe pas
+						## On crée les répertoires pour cette référence (ne fait rien si ils existent) et on supprime les fichiers temporaires au cas ou
+						mkdir -p ${rept}/catalogue/fiches/${ref}/{thumb,tmp,data}
+						
+						## On copie le modèle de fiche par défaut
+						cp ${rept}/conf/.var.txt ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+					}
+				fi
+			}
+		fi
+
+				## Création de la liste des photos à créer
+				pair=0
+				cpt1=0
+				## On compte le nombre de photos disponibles
+				nbphot=$(ls -f "${rept}/catalogue/fiches/${ref}" | grep ".jpg" | grep -v "\-0.jpg" | grep -v "0g.jpg" | wc -l)
+				if [ -n "$(ls -v ${rept}/catalogue/fiches/${ref}/thumb | grep jpg)" ]; then
+					{
+						if [ "${nbphot}" -gt "1" ]; then
+							{
+								for fdef in $(ls -v ${rept}/catalogue/fiches/${ref} | grep ".jpg"); do
+																
+										imdef="non"
+										cat "${rept}/catalogue/fiches/${ref}/${fdef}" | head -1 | grep "${md5_def}" >> /dev/null && imdef="oui"
+										if [ "${imdef}" == "oui" ]; then
+											{
+												rm -f "${rept}/catalogue/fiches/${ref}/${fdef}"
+												rm -f "${rept}/catalogue/fiches/${ref}/thumb/th_${fdef}"
+											}
+										else
+											{
+												if [ ! -e "${rept}/catalogue/fiches/${ref}/thumb/th_${fdef}" ]; then
+													{
+														convert -auto-orient -resize "${dimth}" "${rept}/catalogue/fiches/${ref}/${fdef}" -quality ${qualth} -gravity center -crop ${dimth}+0+0\! -background "${coulth}" -flatten "${rept}/catalogue/fiches/${ref}/thumb/th_${fdef}"
+													}
+												fi
+											}
+										fi
+								done
+							}
+						fi
+						
+						## Si des photos sont déjà présente on prépare leur affichage avec la mise en page adéquate
+						for phot in $(ls -v ${rept}/catalogue/fiches/${ref}/thumb | grep ".jpg" | grep -v "\-0.jpg" | grep -v "\-0g.jpg"); do
+														
+									label=$(echo ${phot%.*} | cut -d- -f2)
+									case ${#label} in
+										1 ) label="${label}___";;
+										2 ) label="${label}__";;
+										* ) label="${label}_";;
+									esac
+
+									if [ "${pair}" == "4" ]; then
+										{
+											pix[$cpt1]="<pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${ref}/thumb/${phot}\"</input></pixmap><checkbox active=\"true\"><variable>${phot%.*}</variable><label>${label}</label></checkbox></hbox>"
+											((cpt1++))
+											pair="0"
+										}
+									elif [ "${pair}" == "0" ]; then
+										{
+											pix[$cpt1]="<hbox><pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${ref}/thumb/${phot}\"</input></pixmap><checkbox active=\"true\"><variable>${phot%.*}</variable><label>${label}</label></checkbox>"
+											((cpt1++))
+											((pair++))
+										}
+									else
+										{
+											pix[$cpt1]="<pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${ref}/thumb/${phot}\"</input></pixmap><checkbox active=\"true\"><variable>${phot%.*}</variable><label>${label}</label></checkbox>"
+											((cpt1++))
+											((pair++))
+										}
+									fi
+							
+							
+							
+						done
+
+						if [ "${pair}" == "0" ]; then
+							{
+								pix=${pix[@]}
+							}
+						else
+							{
+								pix="${pix[@]}</hbox>"
+							}
+						fi
+
+						## Fenêtre GTKdialog permettant la suppression de photos existantes et l'ajout de nouvelles
+						export MAIN_DIALOG='<window title="OSagence, ajouter ou supprimer de photos de biens." decorated="true" window_position="1" icon-name="gtk-home">
+							<vbox>
+								'${pix}'
+								<text>
+									<label>"Glisser/Déposer ou copier/coller les nouvelles photos."</label>
+								</text>
+								<edit wrap-mode="0">
+									<variable>nouv</variable>
+									<width>400</width><height>200</height>
+								</edit>
+								<hbox>
+									<button ok></button>
+								</hbox>
+							</vbox>
+							<action signal="delete-event">exit:Annuler</action>
+						</window>'
+
+						## On crée la liste des photos à supprimer et de celles à ajouter
+						gtkdialog --program=MAIN_DIALOG > ${rept}/catalogue/fiches/${ref}/tmp/liste1.tmp
+						
+						
+						perl -pe "s/\%([A-Fa-f0-9]{2})/pack('C', hex(\$1))/eg;s/\+/ /sg" ${rept}/catalogue/fiches/${ref}/tmp/liste1.tmp > ${rept}/catalogue/fiches/${ref}/tmp/liste.tmp
+						sed -i 's/ /þ/g' ${rept}/catalogue/fiches/${ref}/tmp/liste.tmp
+						grep -v 'file://' ${rept}/catalogue/fiches/${ref}/tmp/liste.tmp | grep '="false"' | sed 's/^"//g' | sed 's/="false"/\.jpg;/g' | sed "s/^/rm ${reptsed}\/catalogue\/fiches\/${ref}\//g" | sed 's/\/th_/\//g' > ${rept}/catalogue/fiches/${ref}/tmp/liste1.tmp
+						grep 'file://' ${rept}/catalogue/fiches/${ref}/tmp/liste.tmp | sed 's/ file:\/\///g' | sed 's/file:\/\///g' | sed 's/nouv="//g' | sed 's/"//g' | sed 's/\r//g' > ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp
+						## Suppression des photos choisies pour être supprimées
+						eval $(cat ${rept}/catalogue/fiches/${ref}/tmp/liste1.tmp)
+					}
+				else
+					{
+						## Si il s'agit d'une nouvelle fiche, on permet l'ajout simple de photos
+						zenity --text-info --title="Glisser/Déposer ou copier/coller les nouvelles photos." --width="600" --height="400" --editable 2  > ${rept}/catalogue/fiches/${ref}/tmp/liste3.tmp
+						perl -pe "s/\%([A-Fa-f0-9]{2})/pack('C', hex(\$1))/eg;s/\+/ /sg" ${rept}/catalogue/fiches/${ref}/tmp/liste3.tmp > ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp
+						sed -i 's/ /þ/g' ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp
+						sed -i 's/file:\/\///g' ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp
+						sed -i 's/\r//g' ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp
+					}
+				fi
+
+				## On remplit les variables par défaut avec la fiche produit existante
+				grep '="' "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt" | grep "\"$" > "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.tmp"
+				mv "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.tmp" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt"
+				
+				eval $(cat ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt)
+
+				## Si la fiche est non publiable, on la déplace dans le répertoire de travail
+				if [ "${pub}" == "false" ] && [ -d "${rept}/catalogue/privees/${ref}" ]; then
+					{
+						mv ${rept}/catalogue/privees/${ref} ${rept}/catalogue/fiches/${ref}
+					}
+				fi
+
+				## On récupère le nombre de photos déjà présentes pour cette référence
+				nbphot=$(ls -f "${rept}/catalogue/fiches/${ref}" | grep ".jpg" | grep -v "\-0.jpg" | grep -v "0g.jpg" | wc -l)
+				org=$(ls ${rept}/catalogue/fiches/${ref} | grep ".jpg" | grep -v "0g.jpg" | grep -v "\-0.jpg" | sed 's/\.jpg//g' | sed 's/-/ /g' | awk '{ print $2 }' | sort -g | tail -n 1)
+				((org++))
+
+				## Si il n'y a pas encore de photos on initialise leur nombre à zéro
+				if [ -z ${org} ]; then
+					{
+						org="0"
+					}
+				fi
+
+				## Si il n'y a pas de photo disponible on insére l'image par défaut
+				if [ ! -s ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp ] && [ "${nbphot}" -lt "1" ]; then
+					{
+						
+						echo "${rept}/conf/no_image.png" > ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp
+					}
+				fi
+					
+				## Image d'attente du traitement des photos
+				export MAIN_VIEWER_MOD_WAIT='<window title="viewer_wait" window_position="1" decorated="false">
+												<vbox>
+													<pixmap>
+													<input file>/usr/share/osagence/pixmaps/convert-pic.gif</input>
+													</pixmap>
+													<text>
+														<label>"Traitement des photos"</label>
+													</text>
+												</vbox>
+											</window>'
+									#Lancer logo
+									gtkdialog --program=MAIN_VIEWER_MOD_WAIT&
+				echo $(wmctrl -l | grep "viewer_wait")
+
+		if  [ ! -z "${ref}" ]; then
+			{
+				## On crée une boucle sur les photos à ajouter
+
+				for arg in $(cat ${rept}/catalogue/fiches/${ref}/tmp/liste2.tmp); do
+
+					## On copie les photos d'origine dans le répertoire de la référence
+					arg1=$(echo ${arg} | sed 's/þ/ /g')
+					cp "${arg1}" ${rept}/catalogue/fiches/${ref}/data/org_${ref}-${org}.jpg
+
+					## On crée les photos destinées aux pages web en les convertissant au format et dimensions appropriées
+
+					convert -auto-orient -resize "${dimph}" ${rept}/catalogue/fiches/${ref}/data/org_${ref}-${org}.jpg -quality ${qualph} -gravity center -crop ${dimph}+0+0\! -background "${coulph}" -flatten ${rept}/catalogue/fiches/${ref}/${ref}-${org}.jpg
+
+					## Si on a choisi un texte à sur-imprimer sur les photos, on le sur-imprime
+					if [ -n "${txph}" ]; then
+						{
+							## Sur-impression sur les photos
+							mogrify -gravity ${postxph} -font ${fontxph} -pointsize ${sizetxph} -fill ${coltxph} -stroke ${coltxph} -draw "text 0,10 ${txph}" ${rept}/catalogue/fiches/${ref}/${ref}-${org}.jpg
+						}
+					fi
+
+					## On crée les miniatures destinées aux pages web en les convertissant au format et dimensions  appropriées
+					convert -auto-orient -resize "${dimth}" ${rept}/catalogue/fiches/${ref}/data/org_${ref}-${org}.jpg -quality ${qualth} -gravity center -crop ${dimth}+0+0\! -background "${coulth}" -flatten ${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-${org}.jpg
+
+
+					## Si on a choisi un texte à sur-imprimer sur les miniatures de photos, on le sur-imprime
+					if [ -n "${txth}" ]; then
+						{
+							## Sur-impression sur les miniatures de photos
+							mogrify -gravity ${postxth} -font ${fontxth} -pointsize ${sizetxth} -fill ${coltxth} -stroke ${coltxth} -draw "text 0,10 ${txth}" ${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-${org}.jpg
+						}
+					fi
+					
+					## si souhaite on supprime les photos originales
+					[[ "${picorg}" == "false" ]] && rm -f ${rept}/catalogue/fiches/${ref}/data/org_${ref}-${org}.jpg
+					
+				   ((org++))
+				   
+				done
+				
+				
+				
+				
+				nbphot=$(ls -f "${rept}/catalogue/fiches/${ref}" | grep ".jpg" | grep -v "\-0.jpg" | grep -v "0g.jpg" | wc -l)
+				pair="0"
+				cpt1="0"
+				if [ "${nbphot}" -gt "1" ]; then
+					{
+						## On choisi la photo principale
+						for princ in $(ls -v ${rept}/catalogue/fiches/${ref}/thumb | grep ".jpg" | grep -v "\-0.jpg" | grep -v "\-0g.jpg"); do
+														
+									label=$(echo ${princ%.*} | cut -d- -f2)
+									case ${#label} in
+										1 ) label="${label}___";;
+										2 ) label="${label}__";;
+										* ) label="${label}_";;
+									esac
+
+									if [ "${pair}" == "4" ]; then
+										{
+											pixs[$cpt1]="<pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${ref}/thumb/${princ}\"</input></pixmap><checkbox active=\"false\"><variable>${princ%.*}</variable><label>${label}</label></checkbox></hbox>"
+											((cpt1++))
+											pair="0"
+										}
+									elif [ "${pair}" == "0" ]; then
+										{
+											pixs[$cpt1]="<hbox><pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${ref}/thumb/${princ}\"</input></pixmap><checkbox active=\"false\"><variable>${princ%.*}</variable><label>${label}</label></checkbox>"
+											((cpt1++))
+											((pair++))
+										}
+									else
+										{
+											pixs[$cpt1]="<pixmap><width>${miap}</width><input file>\"${rept}/catalogue/fiches/${ref}/thumb/${princ}\"</input></pixmap><checkbox active=\"false\"><variable>${princ%.*}</variable><label>${label}</label></checkbox>"
+											((cpt1++))
+											((pair++))
+										}
+									fi
+							
+							
+							
+						done
+
+						if [ "${pair}" == "0" ]; then
+							{
+								pixs="${pixs[@]}"
+							}
+						else
+							{
+								pixs="${pixs[@]}</hbox>"
+							}
+						fi
+						
+						## Fenêtre GTKdialog permettant de choisir la photo principale
+						export MAIN_DIALOG='<window title="OSagence, Choisissez la photo principale." decorated="true" window_position="1" icon-name="gtk-home">
+							<vbox>
+								'${pixs}'
+								<hbox>
+									<button ok></button>
+								</hbox>
+							</vbox>
+							<action signal="delete-event">exit:Annuler</action>
+						</window>'
+						first=$(gtkdialog --program=MAIN_DIALOG)
+						
+						old_IFS=$IFS
+						IFS=" "
+						first_pix="$(echo ${first} | grep 'true' | cut -d'=' -f1 | sed 's/th_//g' | head -1)"
+						IFS=${old_IFS}
+												
+						if [ -e "${rept}/catalogue/fiches/${ref}/${ref}-1.jpg" ]; then
+							{
+								if [ "${first_pix}" != "${ref}-1" ] && [ "${first_pix}" != "" ]; then
+									{
+										mv "${rept}/catalogue/fiches/${ref}/${first_pix}.jpg" "${rept}/catalogue/fiches/${ref}/${first_pix}x.jpg"
+										mv "${rept}/catalogue/fiches/${ref}/${ref}-1.jpg" "${rept}/catalogue/fiches/${ref}/${first_pix}.jpg"
+										mv  "${rept}/catalogue/fiches/${ref}/${first_pix}x.jpg" "${rept}/catalogue/fiches/${ref}/${ref}-1.jpg"
+
+										mv "${rept}/catalogue/fiches/${ref}/thumb/th_${first_pix}.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${first_pix}x.jpg"
+										mv "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-1.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${first_pix}.jpg"
+										mv  "${rept}/catalogue/fiches/${ref}/thumb/th_${first_pix}x.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-1.jpg"
+									}
+								fi
+							}
+						else
+							{
+								if [ "${first_pix}" != "" ]; then
+									{
+										mv  "${rept}/catalogue/fiches/${ref}/${first_pix}.jpg" "${rept}/catalogue/fiches/${ref}/${ref}-1.jpg"
+										mv  "${rept}/catalogue/fiches/${ref}/thumb/th_${first_pix}.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-1.jpg"
+									}
+								fi
+							}
+						fi
+					}
+				fi
+				
+				## Pré-transfert des photos vers le site WEB seulement si nouvelle fiche et  si utilisation de la version complète et non négociateurs
+				if [[ "${fonct}" != "nego" ]]; then
+					{
+						exist=$(lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "cd /fiches/; ls | grep ${ref}; quit")
+						
+						if [ -z "${exist}" ]; then
+							{
+								lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e -R ${rept}/catalogue/fiches/${ref}/ /fiches/a${ref} ;quit"&
+								PID1=$!
+								## On crée une variable indiquant qu'un pré transfert a été effectué
+								pretrans="oui"
+							}
+						fi
+					}
+				fi
+
+				## On crée ou modifie la fiche produit
+				
+				## On prépare la valeur par defaut du DPE
+				if [ -z "${val}" ]; then
+					{
+						val="-1"
+					}
+				fi
+				
+				valorg="${val}"
+				
+				## On prépare la valeur par defaut du GES
+				if [ -z "${val1}" ]; then
+					{
+						val1="-1"
+					}
+				fi
+				
+				## On reset l'image de progression
+				wmctrl -c viewer_wait
+				
+			## Boucle pour relancer caractéristiques publiques si retour sur caractéristiques privées 
+			while true
+				do
+				
+				## Boucle sur la saisie des caractéristiques publiques
+				while true
+				do
+						# On remplit les variables vides
+						if [ -z "${ref}" ]; then
+							{
+								eval "$(grep '^ref=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a011}" ]; then
+							{
+								eval "$(grep '^a011=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a015}" ]; then
+							{
+								eval "$(grep '^a015=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a027}" ]; then
+							{
+								eval "$(grep '^a027=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a017}" ]; then
+							{
+								eval "$(grep '^a017=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a018}" ]; then
+							{
+								eval "$(grep '^a018=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a019}" ]; then
+							{
+								eval "$(grep '^a019=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a029}" ]; then
+							{
+								eval "$(grep '^a029=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a031}" ]; then
+							{
+								eval "$(grep '^a031=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${gara}" ]; then
+							{
+								eval "$(grep '^gara=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a016}" ]; then
+							{
+								eval "$(grep '^a016=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a216}" ]; then
+							{
+								eval "$(grep '^a216=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${floor}" ]; then
+							{
+								eval "$(grep '^floor=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${val}" ]; then
+							{
+								eval "$(grep '^val=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${val1}" ]; then
+							{
+								eval "$(grep '^val1=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a020}" ]; then
+							{
+								eval "$(grep '^a021=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						# On gère les saut de ligne html pour l'affichage
+						a021=$(echo "${a021}" | sed 's/<br>/µ/g')
+				
+						## On prépare l'état des cases à cocher en vente, coup de coeur et public
+						if [ "${vent}" == "true" ] || [ "${vent}" == "false" ]; then
+							{
+								vent2="<checkbox active=\"${vent}\">"
+							}
+						else
+							{
+								vent2="<checkbox active=\"true\">"
+								vent="true"
+							}
+						fi
+						
+						if [ "${pub}" == "true" ] || [ "${pub}" == "false" ]; then
+							{
+								pub2="<checkbox active=\"${pub}\">"
+							}
+						else
+							{
+								pub2="<checkbox active=\"true\">"
+								pub="true"
+							}
+						fi
+						
+						if [ "${a084}" == "true" ] || [ "${a084}" == "false" ]; then
+							{
+								coeur2="<checkbox active=\"${a084}\">"
+							}
+						else
+							{
+								coeur2="<checkbox active=\"false\">"
+								a084="false"
+							}
+						fi
+						
+						if [ "${veacq}" == "true" ] || [ "${veacq}" == "false" ]; then
+							{
+								veacq1="<checkbox active=\"${veacq}\">"
+							}
+						else
+							{
+								veacq1="<checkbox active=\"false\">"
+								veacq="false"
+							}
+						fi
+						
+						if [ "${a083}" == "true" ] || [ "${a083}" == "false" ]; then
+							{
+								exclu="<checkbox active=\"${a083}\">"
+							}
+						else
+							{
+								exclu="<checkbox active=\"false\">"
+								a083="false"
+							}
+						fi
+				
+						if [ -e ${rept}/catalogue/fiches/${ref}/data/.types-annonce-${ref}.txt ]; then
+							{
+								annon=$(cat ${rept}/catalogue/fiches/${ref}/data/.types-annonce-${ref}.txt)
+							}
+						fi
+						
+						if [ -z "${annon}" ]; then
+							{
+								annon=$(cat ${rept}/conf/.types-annonce.txt)
+							}
+						fi
+				
+						if [ -e ${rept}/catalogue/fiches/${ref}/data/.type-${ref}.txt ]; then
+							{
+								types=$(cat ${rept}/catalogue/fiches/${ref}/data/.type-${ref}.txt)
+							}
+						fi
+						if [ -z "${types}" ]; then
+							{
+								types=$(cat ${rept}/conf/.types-de-biens.txt)
+							}
+						fi
+						
+						if [ -z "${unit}" ]; then
+							{
+								eval "$(grep '^unit=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+							
+						## On reprend le précédent choix d'unité de surface de terrain
+						if [ "${unit}" == "hectare(s)" ]; then
+							{
+								unite="<item>hectare(s)</item><item>m²</item>"
+							}
+						else
+							{
+								unite="<item>m²</item><item>hectare(s)</item>"
+								unit="m²"
+							}
+						fi
+						
+						if [ -z "${etag}" ]; then
+							{
+								eval "$(grep '^etag=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+				
+				## On inscrit la valeur ville et CP
+				if [ -e "${rept1}/ville.tmp" ]; then
+					{
+						eval $(cat ${rept1}/ville.tmp)
+					}
+				else
+					{
+						if [ -z "${a006}" ]; then
+							{
+								eval "$(grep '^a006=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a005}" ]; then
+							{
+								eval "$(grep '^a005=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+					}
+				fi
+				
+				if [ -e "${rept1}/chauffage.tmp" ]; then
+					{
+						eval $(cat ${rept1}/chauffage.tmp)
+						heat=$(grep "\"${a033}\"" "${rept}/conf/.chauffage.txt" | cut -d# -f2 | sed "s/ /_/g")
+					}
+				else
+					{
+						if [ -z "${heat}" ] || [ -z "${a033}" ]; then
+							{
+								eval "$(grep '^heat=\"' ${rept}/conf/.var.txt)"
+								eval "$(grep '^a033=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+					}
+				fi
+				
+				valorgg="${val1}"
+											
+				## Boite de dialogue de modification de la gtkdialog fiche produit
+				export MAIN_DIALOG='<window title="OSagence, données relatives au bien." decorated="true" window_position="1" icon-name="gtk-home" width_request="800">
+					<vbox>
+						<frame Caractéristiques>
+								<pixmap>
+									<input file>"/usr/share/osagence/pixmaps/OSagence.png"</input>
+								</pixmap>
+								<vbox>
+									<hbox>
+										<text>
+											<label>"No.:"</label>
+										</text>
+										<entry>
+											<variable>ref</variable>
+											<default>'"${ref}"'</default>
+											<visible>disabled</visible>
+										</entry>
+										
+										'${coeur2}'
+											<variable>a084</variable>
+											<label>"Coup de coeur"</label>
+										</checkbox>
+
+										'${vent2}'
+											<variable>vent</variable>
+											<label>"En vente"</label>
+										</checkbox>
+
+										'${pub2}'
+											<variable>pub</variable>
+											<label>"Publier"</label>
+										</checkbox>
+
+										<entry>
+											<variable>a005</variable>
+											<default>'"${a005}"'</default>
+											<visible>disabled</visible>
+										</entry>
+										<entry>
+											<variable>a006</variable>
+											<default>'"${a006}"'</default>
+											<visible>disabled</visible>
+										</entry>
+										<button>
+											<label>"Ville"</label>
+										</button>
+									</hbox>
+									<hbox homogeneous="true">										
+										<text>
+											<label>"Type de bien: "</label>
+										</text>
+										<combobox>
+											<variable>a004</variable>
+											'"${types}"'
+										</combobox>
+										<text>
+											<label>"Type annonce: "</label>
+										</text>
+										<combobox>
+											<variable>a003</variable>
+											'"${annon}"'
+										</combobox>
+										
+										'${exclu}'
+											<variable>a083</variable>
+											<label>"Mandat exclu."</label>
+										</checkbox>
+									</hbox>
+									<hbox homogeneous="true">
+										<text>
+											<label>"Prix nv:"</label>
+										</text>
+										<entry>
+											<variable>a011</variable>
+											<default>'${a011}'</default>
+										</entry>
+										<text>
+											<label>"Honoraires:"</label>
+										</text>
+										<entry>
+											<variable>a015</variable>
+											<default>'${a015}'</default>
+										</entry>
+										
+										'${veacq1}'
+											<variable>veacq</variable>
+											<label>"Charge acquéreur"</label>
+										</checkbox>
+										<text>
+											<label>"Construit en"</label>
+										</text>
+										<entry>
+											<variable>a027</variable>
+											<default>'${a027}'</default>
+										</entry>
+									</hbox>
+									<hbox homogeneous="true">
+										<text>
+											<label>"Nb de pièces:"</label>
+										</text>
+										<entry>
+											<variable>a018</variable>
+											<default>'${a018}'</default>
+										</entry>
+										<text>
+											<label>"Chambres"</label>
+										</text>
+										<entry>
+											<variable>a019</variable>
+											<default>'${a019}'</default>
+										</entry>
+									</hbox>
+									<hbox homogeneous="true">
+										<text>
+											<label>"Salles de bain"</label>
+										</text>
+										<entry>
+											<variable>a029</variable>
+											<default>'${a029}'</default>
+										</entry>
+										<text>
+											<label>"Toilettes"</label>
+										</text>
+										<entry>
+											<variable>a031</variable>
+											<default>'${a031}'</default>
+										</entry>
+										<text>
+											<label>"Garage"</label>
+										</text>
+										<entry>
+											<variable>gara</variable>
+											<default>'${gara}'</default>
+										</entry>
+									</hbox>
+									<hbox homogeneous="true">										
+										<text>
+											<label>"Surface: "</label>
+										</text>
+										<entry>
+											<variable>a016</variable>
+											<default>'${a016}'</default>
+										</entry>
+										
+										<text>
+											<label>"Surface séjour: "</label>
+										</text>
+										<entry>
+											<variable>a216</variable>
+											<default>'${a216}'</default>
+										</entry>
+									</hbox>
+									<hbox homogeneous="true">
+										<combobox>
+											<variable>unflo</variable>
+											'"${etag}"'
+										</combobox>
+										<entry>
+											<variable>floor</variable>
+											<default>'${floor}'</default>
+										</entry>
+										<text>
+											<label>"Terrain"</label>
+										</text>
+										<entry>
+											<variable>a017</variable>
+											<default>'${a017}'</default>
+										</entry>
+										<combobox>
+											<variable>unit</variable>
+											'"${unite}"'
+										</combobox>
+									</hbox>
+								</vbox>
+						
+						</frame>
+						<frame DPE/GES>
+							<hbox homogeneous="true">
+								<entry>
+									<variable>val</variable>
+									<default>'${val}'</default>
+								</entry>
+								<text>
+									<label>"kWh EP/m².an"</label>
+								</text>
+								<entry>
+									<variable>val1</variable>
+									<default>'${val1}'</default>
+								</entry>
+								<text>
+									<label>"   kgéqCO2/m².an"</label>
+								</text>
+								<entry>
+									<variable>heat</variable>
+									<default>'"${heat}"'</default>
+									<visible>disabled</visible>
+								</entry>
+								<button>
+									<label>"Chauffage"</label>
+								</button>	
+							</hbox>
+						</frame>
+						<frame description courte, 64 caractères max. PAS DE \" DANS LE TEXTE>
+							<vbox>
+								<entry max-length="64">
+									<variable>a020</variable>
+									<default>'${a020}'</default>
+								</entry>
+							</vbox>
+						</frame>
+					<vbox>
+						<text>
+							<label>"***"</label>
+						</text>
+					</vbox>
+						<frame Description complète, 4000 caractères max. PAS DE \" DANS LE TEXTE>
+							<vbox>
+								<edit wrap-mode="2">
+									<variable>a021</variable>
+									<default>'${a021}'</default>
+								</edit>
+							</vbox>
+						</frame>
+						<hbox>
+							<button>
+								<label>"Copro"</label>
+							</button>
+							<button ok></button>
+						</hbox>
+					</vbox>
+					<action signal="delete-event">exit:Annuler</action>
+				</window>'
+
+				VARIABLES=$(gtkdialog --program=MAIN_DIALOG)
+
+				## inscription du résultat Gtkdialog dans des variables
+				eval ${VARIABLES}
+				
+				a011=$(echo "${a011}" | sed 's/[^[:digit:]]//g')
+				a015=$(echo "${a015}" | sed 's/[^[:digit:]]//g')
+				
+				a021=$(echo "${a021}" | sed 's/µ/<br>/g' | tr -d [:cntrl:])
+				
+				
+				
+				## enregistrement du choix de type de bien pour qu'il soit reproposé par défaut lors de la prochaine modification de la fiche
+				if [[ ! -z $(grep "<item>\"${a004}\"</item>" ${rept}/conf/.types-de-biens.txt) ]]; then
+					{
+						echo "<item>\"${a004}\"</item>" > ${rept}/catalogue/fiches/${ref}/data/.type-${ref}.txt
+					}
+				fi
+				
+				grep -v "<item>\"${a004}\"</item>" ${rept}/conf/.types-de-biens.txt >> ${rept}/catalogue/fiches/${ref}/data/.type-${ref}.txt
+				
+				## enregistrement du choix de type d'annonce pour qu'il soit reproposé par défaut lors de la prochaine modification de la fiche
+				if [[ ! -z $(grep "<item>\"${a003}\"</item>" ${rept}/conf/.types-annonce.txt) ]]; then
+					{
+						echo "<item>\"${a003}\"</item>" > ${rept}/catalogue/fiches/${ref}/data/.types-annonce-${ref}.txt
+					}
+				fi
+				
+				grep -v "<item>\"${a003}\"</item>" ${rept}/conf/.types-annonce.txt >> ${rept}/catalogue/fiches/${ref}/data/.types-annonce-${ref}.txt
+				
+				if [ -z "${etag}" ]; then
+					{
+						unflo="Nb étages"
+					}
+				fi
+				
+				if [ "${unflo}" == "Nb étages" ]; then
+					{
+						etag="<item>Nb étages</item><item>à l étage</item>"
+					}
+				else
+					{
+						etag="<item>à l étage</item><item>Nb étages</item>"
+					}
+				fi
+				
+				heat1="$(echo ${heat} | sed "s/_/ /g")"
+				eval $(grep "#${heat1}#" "${rept}/conf/.chauffage.txt" | cut -d# -f3)
+				
+				if [ "${EXIT}" == "Ville" ]; then
+					{
+						/usr/share/osa-villes/osa-villes
+						EXIT=""
+					}
+				fi
+				
+				if [ "${EXIT}" == "Chauffage" ]; then
+					{
+						/usr/share/osagence/chauffage.sh
+						EXIT=""
+					}
+				fi
+				
+				if [ "${EXIT}" == "OK" ]; then
+					{
+						break
+					}
+				fi
+				
+				if [ "${EXIT}" == "Copro" ]; then
+					{
+						while true
+						do
+							if [ "${a258}" == "true" ] || [ "${a0258}" == "false" ]; then
+								{
+									copro="<checkbox active=\"${a258}\">"
+								}
+							else
+								{
+									copro="<checkbox active=\"false\">"
+									a258="false"
+								}
+							fi
+							
+							if [ -z "${a259}" ]; then
+								{
+									a259="0"
+								}
+							fi
+							
+							if [ -z "${a260}" ]; then
+								{
+									a260="0"
+								}
+							fi
+							
+							if [ "${a261}" == "true" ] || [ "${a0261}" == "false" ]; then
+								{
+									cpproc="<checkbox active=\"${a261}\">"
+								}
+							else
+								{
+									cpproc="<checkbox active=\"false\">"
+									a261="false"
+								}
+							fi
+							
+							if [ -z "${a262}" ]; then
+								{
+									a262="_"
+								}
+							fi
+							
+							## écran de saisie des paramètres de copropriété
+							export MAIN_DIALOG='<window title="Informations supplémentaires" decorated="true" window_position="1" icon-name="gtk-home" width_request="800">
+													<frame Copropriétes>
+														<vbox>
+															<hbox>
+																	'${copro}'
+																	<variable>a258</variable>
+																	<label>"En copropriété"</label>
+																</checkbox>
+																<entry>
+																	<variable>a259</variable>
+																	<default>'${a259}'</default>
+																</entry>
+																<text>
+																	<label>"Nb. de lots"</label>
+																</text>
+																<entry>
+																	<variable>a260</variable>
+																	<default>'${a260}'</default>
+																</entry>
+																<text>
+																	<label>"Charges annuelles"</label>
+																</text>
+															</hbox>
+														</vbox>
+														<vbox>
+																'${cpproc}'
+																<variable>a261</variable>
+																<label>"Syndicat des copropriétaires en procédure"</label>
+															</checkbox>
+														</vbox>
+														<frame "Détail de la procédure, 128 caractères max. PAS DE \" DANS LE TEXTE">
+															<vbox>
+																<entry max-length="128">
+																	<variable>a262</variable>
+																	<default>'${a262}'</default>
+																</entry>
+															</vbox>
+														</frame>
+														<hbox>
+															<button ok></button>
+														</hbox>
+													</frame>
+													
+													<action signal="delete-event">exit:Annuler</action>
+												</window>'
+							VARIABLES=$(gtkdialog --program=MAIN_DIALOG)
+						
+							eval ${VARIABLES}
+							
+							if [ -z "${a259}" ]; then
+								{
+									a259="0"
+								}
+							fi
+							
+							if [ -z "${a260}" ]; then
+								{
+									a260="0"
+								}
+							fi
+							
+							if [ -z "${a262}" ]; then
+								{
+									a262="_"
+								}
+							fi
+							
+							if [ "${EXIT}" == "OK" ]; then
+								{
+									break
+								}
+							fi
+						done
+					}
+				fi
+														
+			done
+				
+				## Si la date de prise de mandat n'est pas renseignée, on force le choix de la date
+				if [ -z "${a113}" ]; then
+					{
+						while true
+						do
+							a113=$(zenity --calendar --date-format="%d/%m/%Y" --title="date de prise du mandat." --text="Ne pas oublier de saisir la date de prise du mandat")
+							if [ "${a113}" != "" ]; then
+								{
+									break
+								}
+							fi
+						done
+					}
+				fi
+				
+				## On prépare la valeur par defaut du nom du mandataire
+				if [ -z "${a114}" ]; then
+					{
+						a114="Nom"
+					}
+				fi
+				
+				## On prépare la valeur par defaut du prénom du mandataire
+				if [ -z "${a115}" ]; then
+					{
+						a115="Prénom"
+					}
+				fi
+				
+				## On prépare la valeur par defaut raison sociale du mandataire
+				if [ -z "${a116}" ]; then
+					{
+						a116="_"
+					}
+				fi
+				
+				## On prépare la valeur par defaut de l'adresse du mandataire
+				if [ -z "${a117}" ]; then
+					{
+						a117="_"
+					}
+				fi
+				
+				
+						## On récupère le ville et le CP du bien comme valeur par défaut de l'adresse de mandataire
+						if [ -e "${rept1}/ville.tmp" ]; then
+							{
+								eval $(cat ${rept1}/ville.tmp)
+							}
+						fi
+						
+				
+				## Début de la boucle de saisie des renseignements privés
+				while true
+				do
+					
+					## On prépare la valeur par defaut du code postal et de la ville du mandataire
+					if [ -e "${rept1}/villemand.tmp" ]; then
+						{
+							eval $(cat ${rept1}/villemand.tmp)
+						}
+					fi
+					
+					if [ -z "${a118}" ]; then
+							{
+								if [ ! -z "${a005}" ]; then
+									{
+										a118="${a005}"
+									}
+								else
+									{
+										eval "$(grep '^a118=\"' ${rept}/conf/.var.txt)"
+									}
+								fi
+							}
+						fi
+						
+						if [ -z "${a119}" ]; then
+							{						
+								if [ ! -z "${a006}" ]; then
+									{
+										a119="${a006}"
+									}
+								else
+									{
+										eval "$(grep '^a119=\"' ${rept}/conf/.var.txt)"
+									}
+								fi
+							}
+						fi
+						
+						if [ -z "${a108}" ]; then
+							{
+								if [ ! -z "${a005}" ]; then
+									{
+										a108="${a005}"
+									}
+								else
+									{
+										eval "$(grep '^a108=\"' ${rept}/conf/.var.txt)"
+									}
+								fi
+							}
+						fi
+						
+						if [ -z "${a109}" ]; then
+							{						
+								if [ ! -z "${a006}" ]; then
+									{
+										a109="${a006}"
+									}
+								else
+									{
+										eval "$(grep '^a109=\"' ${rept}/conf/.var.txt)"
+									}
+								fi
+							}
+						fi
+						
+						if [ -z "${tadd}" ]; then
+							{
+								eval "$(grep '^tadd=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a113}" ]; then
+							{
+								eval "$(grep '^a113=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a114}" ]; then
+							{
+								eval "$(grep '^a114=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a115}" ]; then
+							{
+								eval "$(grep '^a115=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a116}" ]; then
+							{
+								eval "$(grep '^a116=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a117}" ]; then
+							{
+								eval "$(grep '^a117=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a120}" ]; then
+							{
+								eval "$(grep '^a120=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+						
+						if [ -z "${a122}" ]; then
+							{
+								eval "$(grep '^a122=\"' ${rept}/conf/.var.txt)"
+							}
+						fi
+				
+					## On gère les saut de ligne html pour l'affichage
+					a122=$(echo "${a122}" | sed 's/<br>/µ/g')
+					
+					## Préparation de la variable du négociateur
+					if [ -e ${rept}/catalogue/fiches/${ref}/data/.negociateur-${ref}.txt ]; then
+						{
+							nego=$(cat ${rept}/catalogue/fiches/${ref}/data/.negociateur-${ref}.txt)
+						}
+					fi
+					
+					if [ -z "${nego}" ]; then
+						{
+							nego=$(grep -v "^#" "${rept}/conf/.negociateur.txt" | cut -d# -f1 | tr -d '\n')
+						}
+					fi
+					
+					## ville du mandataire
+					if [ -e "${rept1}/villemand.tmp" ]; then
+						{
+							eval $(cat ${rept1}/villemand.tmp)
+						}
+					fi
+					
+					## ville réelle du bien 
+					if [ -e "${rept1}/villemand1.tmp" ]; then
+					{
+						eval $(cat ${rept1}/villemand1.tmp)
+					}
+					fi
+					
+					if [ -e "/usr/share/osa-langues/osa-langues" ]; then
+						{
+							lang_t="<button><label>Lang.</label></button>"
+						}
+					else
+						{
+							lang_t=""
+						}
+					fi
+					
+					## Boite de dialogue de modification de la gtkdialog fiche produit privée
+					export MAIN_DIALOG='<window title="OSagence, données non publiques relatives au bien." decorated="true" window_position="1" icon-name="gtk-home" width_request="800">
+						<vbox>
+							<frame "Caractéristiques privées">
+									<pixmap>
+										<input file>"/usr/share/osagence/pixmaps/OSagence-prive.png"</input>
+									</pixmap>
+									<vbox>
+										<hbox>
+											<entry>
+												<variable>a113</variable>
+												<default>'"${a113}"'</default>
+												<visible>disabled</visible>
+											</entry>
+											<button>
+												<label>"Date de prise du mandat"</label>
+											</button>
+											<text>
+												<label>"Négociateur: "</label>
+											</text>
+											<combobox>
+												<variable>a123</variable>
+												'"${nego}"'
+											</combobox>
+										</hbox>
+										<frame "Mandataire">
+											<hbox>
+												<text>
+													<label>"Nom Prénom"</label>
+												</text>
+												<entry>
+													<variable>a114</variable>
+													<default>'${a114}'</default>
+												</entry>
+												<entry>
+													<variable>a115</variable>
+													<default>'${a115}'</default>
+												</entry>
+												<text>
+													<label>"Raison sociale"</label>
+												</text>
+												<entry>
+													<variable>a116</variable>
+													<default>'${a116}'</default>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"Adresse"</label>
+												</text>
+												<entry>
+													<variable>a117</variable>
+													<default>'${a117}'</default>
+												</entry>
+												<entry>
+													<variable>a118</variable>
+													<default>'"${a118}"'</default>
+													<visible>disabled</visible>
+												</entry>
+												<entry>
+													<variable>a119</variable>
+													<default>'"${a119}"'</default>
+													<visible>disabled</visible>
+												</entry>
+												<button>
+													<label>"Ville"</label>
+												</button>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"n° de tél"</label>
+												</text>
+												<entry>
+													<variable>a120</variable>
+													<default>'${a120}'</default>
+												</entry>
+											</hbox>
+										</frame>
+									</vbox>
+										<text>
+											<label>"Adresse réelle bien."</label>
+										</text>
+											<entry>
+												<variable>tadd</variable>
+												<default>'${tadd}'</default>
+											</entry>
+										<hbox>
+											<entry>
+												<variable>a108</variable>
+												<default>'"${a108}"'</default>
+												<visible>disabled</visible>
+											</entry>
+											<entry>
+												<variable>a109</variable>
+												<default>'"${a109}"'</default>
+												<visible>disabled</visible>
+											</entry>
+											<button>
+												<label>"Ville-1"</label>
+											</button>
+										</hbox>
+									<frame "Commentaires privés, 4000 caractères max. PAS DE \" DANS LE TEXTE">
+										<vbox>
+											<edit wrap-mode="2">
+												<variable>a122</variable>
+												<default>'${a122}'</default>
+											</edit>
+										</vbox>
+									</frame>
+									<hbox>
+										'${lang_t}'
+										<button ok></button>
+										<button>
+											<label>"Retour"</label>
+										</button>
+									</hbox>
+								</frame>
+							</vbox>
+							<action signal="delete-event">exit:Annuler</action>
+						</window>'
+									VARIABLES=$(gtkdialog --program=MAIN_DIALOG)
+					
+					eval ${VARIABLES}
+					
+					a122=$(echo "${a122}" | sed 's/µ/<br>/g' | tr -d [:cntrl:])
+										
+					## enregistrement du choix du négociateur pour qu'il soit reproposé par défaut lors de la prochaine modification de la fiche
+					if [ -z "${a123}" ]; then
+						{
+							grep -v "^#" ${rept}/conf/.negociateur.txt | cut -d"#" -f1  > ${rept}/catalogue/fiches/${ref}/data/.negociateur-${ref}.txt
+						}
+					else
+						{
+							echo "<item>\"${a123}\"</item>" > ${rept}/catalogue/fiches/${ref}/data/.negociateur-${ref}.txt
+							grep -v "<item>\"${a123}\"</item>" ${rept}/conf/.negociateur.txt | grep -v "^#" | cut -d"#" -f1  >> ${rept}/catalogue/fiches/${ref}/data/.negociateur-${ref}.txt
+						}
+					fi
+					
+					## Ouverture d'un calendrier pour le choix de la date de prise du mandat
+					if [ "${EXIT}" == "Date de prise du mandat" ]; then
+						{
+							a113=$(zenity --calendar --day="$(echo ${a113} | cut -d\/ -f1)" month="$(echo ${a113} | cut -d\/ -f2)" --year="$(echo ${a113} | cut -d\/ -f3)" --date-format="%d/%m/%Y" --title="date de prise du mandat." --text="Ne pas oublier de saisir la date de prise du mandat")
+							EXIT=""
+						}
+					fi
+					
+					if [ "${EXIT}" == "Ville" ]; then
+						{
+							echo ";-)" > "/tmp/villemand.tmp"
+							/usr/share/osa-villes/osa-villes
+							EXIT=""
+						}
+					fi
+					
+					if [ "${EXIT}" == "Ville-1" ]; then
+						{
+							echo ";-)" > "/tmp/villemand1.tmp"
+							/usr/share/osa-villes/osa-villes
+							EXIT=""
+						}
+					fi
+					
+					if [ "${EXIT}" == "Lang." ]; then
+						{
+							echo -e "a020=\"${a020}\"\na021=\"${a021}\"\na124=\"${a124}\"\na126=\"${a126}\"\na127=\"${a127}\"\na128=\"${a128}\"\na130=\"${a130}\"\na131=\"${a131}\"\na132=\"${a132}\"\na134=\"${a134}\"\na135=\"${a135}\"" > "${rept1}/traduc.tmp"
+							/usr/share/osa-langues/osa-langues
+							if [ -e "${rept1}/lg1.tmp" ]; then
+								{
+									eval $(cat "${rept1}/lg1.tmp")
+								}
+							fi
+							
+							if [ -e "${rept1}/lg2.tmp" ]; then
+								{
+									eval $(cat "${rept1}/lg2.tmp")
+								}
+							fi
+							
+							if [ -e "${rept1}/lg3.tmp" ]; then
+								{
+									eval $(cat "${rept1}/lg3.tmp")
+								}
+							fi
+							
+							rm -f "${rept1}/traduc.tmp"
+						}
+					fi
+					
+					if  [ "${EXIT}" != "Date de prise du mandat" ] && [ "${EXIT}" != "Lang." ] && [ "${EXIT}" != "Ville" ] && [ "${EXIT}" != "Ville-1" ] && [ "${EXIT}" != "" ]; then
+						{
+							break
+						}
+					fi
+				
+				done
+				
+				## Suppression du fichier temporaire du chauffage
+				rm -f "${rept1}/chauffage.tmp"
+				
+				if [ "${EXIT}" == "OK" ]; then
+					{
+						break
+					}
+				fi
+			done
+			
+				[[ "${val}" =~ [[:digit:]]+$ ]] || val="NS"
+				[[ "${val1}" =~ [[:digit:]]+$ ]] || val1="NS"
+
+				## On crée un fichier temporaire avec les valeurs adéquates pour générer l'étiquette DPE
+				echo "chodpe=\"${rept}/catalogue/fiches/${ref}\"" > ${rept1}/var-dpe.txt
+				echo "grand=\"true\"" >> ${rept1}/var-dpe.txt
+				echo "nomdpe=\"${ref}\"" >> ${rept1}/var-dpe.txt
+				echo "tlg=\"${tlg}\"" >> ${rept1}/var-dpe.txt
+				echo "val=\"${val}\"" >> ${rept1}/var-dpe.txt
+				echo "val1=\"${val1}\"" >> ${rept1}/var-dpe.txt
+				echo "vig=\"true\"" >> ${rept1}/var-dpe.txt
+				echo "tllv=\"${tllv}\"" >> ${rept1}/var-dpe.txt
+				echo "ntv=\"false\"" >> ${rept1}/var-dpe.txt
+				echo "tltyp=\"jpg\"" >> ${rept1}/var-dpe.txt
+				
+				## on supprime l'étiquette DPE et/ou GES si la valeur est négative ou non numérique
+				if [[ ! "${val}" =~ [0-9] ]] || [[ "${val}" -lt "0" ]]; then
+					{
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg" ]] && rm -f "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg"
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0.jpg" ]] && rm -f "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0.jpg"
+					}
+				fi
+				
+				if [[ ! "${val1}" =~ [0-9] ]] || [[ "${val1}" -lt "0" ]]; then
+					{
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/${ref}-0g.jpg" ]] && rm -f "${rept}/catalogue/fiches/${ref}/${ref}-0g.jpg"
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0g.jpg" ]] && rm -f "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0g.jpg"
+					}
+				fi
+						
+
+				## On lance le script de génération des étiquettes DPE
+				if [ "${val}" != "${valorg}" ] || [ "${val1}" != "${valorgg}" ]; then
+					{
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg" ]] && [[ "${val}" != "${valorg}" ]] && rm -f "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg" && rm -f "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0.jpg"
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/${ref}-0g.jpg" ]] && [[ "${val1}" != "${valorgg}" ]] && rm -f "${rept}/catalogue/fiches/${ref}/${ref}-0g.jpg" && rm -f "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0g.jpg"
+						
+						if [[ "${val}" =~ [[:digit:]]+$ ]] && [[ "${val}" -gt "-1" ]]; then
+							{
+								/usr/share/osa-dpe/osa-dpe
+							}
+						elif [[ "${val1}" =~ [[:digit:]]+$ ]] && [[ "${val1}" -gt "-1" ]]; then
+							{
+								/usr/share/osa-dpe/osa-dpe
+							}
+						fi
+					}
+				fi
+				
+				wmctrl -c viewer_wait
+				
+				## On renomme et dépace les étiquettes générées dans les répertoires prévus
+				if [ -e "/tmp/valn.tmp" ]; then
+					{
+						eval $(cat /tmp/valn.tmp)
+						if [ -e "${rept}/catalogue/fiches/${ref}/${ref}-${valn}-gd-DPE.jpg" ]; then
+							{
+								mv "${rept}/catalogue/fiches/${ref}/${ref}-${valn}-gd-DPE.jpg" "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg"
+							}
+						fi
+						
+						if [ -e "${rept}/catalogue/fiches/${ref}/${ref}-${valn}-vig-DPE.jpg" ]; then
+							{
+								mv "${rept}/catalogue/fiches/${ref}/${ref}-${valn}-vig-DPE.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0.jpg"
+							}
+						fi
+						
+						rm /tmp/valn.tmp
+					}
+				else
+					{
+						## Si pas de DPE on utilise une image par defaut
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg" ]] && cp "${rept}/conf/dpe-def.jpg" "${rept}/catalogue/fiches/${ref}/${ref}-0.jpg"
+						[[ ! -e "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0.jpg" ]] && cp "${rept}/conf/th_dpe-def.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0.jpg"
+					}
+				fi
+				
+				if [ -e "/tmp/valn1.tmp" ]; then
+					{
+						eval $(cat /tmp/valn1.tmp)
+						if [ -e "${rept}/catalogue/fiches/${ref}/${ref}-${valn1}-gd-GES.jpg" ]; then
+							{
+								mv "${rept}/catalogue/fiches/${ref}/${ref}-${valn1}-gd-GES.jpg" "${rept}/catalogue/fiches/${ref}/${ref}-0g.jpg"
+							}
+						fi
+						
+						if [ -e "${rept}/catalogue/fiches/${ref}/${ref}-${valn1}-vig-GES.jpg" ]; then
+							{
+								mv "${rept}/catalogue/fiches/${ref}/${ref}-${valn1}-vig-GES.jpg" "${rept}/catalogue/fiches/${ref}/thumb/th_${ref}-0g.jpg"
+							}
+						fi
+						rm /tmp/valn1.tmp
+					}
+				fi
+						
+				## Mise en forme de certaines variables en évitant les valeurs nulles
+				if [ -z "${a015}" ]; then
+					{
+						a015="0"
+					}
+				fi
+				
+				if [ -z "${a017}" ]; then
+					{
+						a017="0"
+					}
+				fi
+
+				if [ -z "${a020}" ]; then
+					{
+						a020="_"
+					}
+				fi
+				
+				if [ -z "${a021}" ]; then
+					{
+						a021="_"
+					}
+				fi
+
+				if [ -z "${a016}" ]; then
+					{
+						a016="0"
+					}
+				fi
+
+				if [ -z "${a018}" ]; then
+					{
+						a018="1"
+					}
+				fi
+
+				if [ -z "${a011}" ]; then
+					{
+						a011="0"
+					}
+				fi
+				
+				if [ -z "${a015}" ]; then
+					{
+						a015="0"
+					}
+				fi
+
+				if [ -z "${pub}" ]; then
+					{
+						pub="true"
+					}
+				fi
+
+				if [ -z "${unit}" ]; then
+					{
+						unit="m²"
+					}
+				fi
+								
+				if [ -z "${vent}" ]; then
+					{
+						vent="true"
+					}
+				fi
+				
+				if [ -z "${a084}" ] || [ "${vent}" = "false" ] || [ "${pub}" = "false" ]; then
+					{
+						a084="false"
+					}
+				fi
+				
+				if [ -z "${veacq}" ]; then
+					{
+						veacq="false"
+					}
+				fi
+
+				if [ -z "${a021}" ]; then
+					{
+						a021="_"
+					}
+				fi
+
+				if [ -z "${a027}" ]; then
+					{
+						a027="0"
+					}
+				fi
+				
+				if [ -z "${a019}" ]; then
+					{
+						a019="0"
+					}
+				fi
+				
+				if [ -z "${a216}" ]; then
+					{
+						a021="0"
+					}
+				fi
+								
+				if [ -z "${a029}" ]; then
+					{
+						a029="0"
+					}
+				fi
+				
+				if [ -z "${a031}" ]; then
+					{
+						a031="0"
+					}
+				fi
+				
+				if [ -z "${gara}" ]; then
+					{
+						gara="0"
+					}
+				fi
+				
+				if [ -z "${floor}" ]; then
+					{
+						floor="0"
+					}
+				fi
+				
+				a106="${a123}"
+				a107=$(grep "${a106}" "${rept}/conf/.negociateur.txt" | cut -d# -f2)
+				a105=$(grep "${a106}" "${rept}/conf/.negociateur.txt" | cut -d# -f3)
+				qualit=$(grep "${a106}" "${rept}/conf/.negociateur.txt" | cut -d# -f4)
+				
+				
+				a011=$(echo ${a011} | sed 's/€//g' | sed 's/,/\./g' | sed 's/ //g')
+				a015=$(echo ${a015} | sed 's/€//g' | sed 's/,/\./g' | sed 's/ //g')
+				a021=$(echo ${a021} | sed ':a;N;$!ba;s/\n//g' | sed 's/"/’’/g')
+				a020=$(echo ${a020} | sed ':a;N;$!ba;s/\n//g' | sed 's/"/’’/g')
+
+				## Création de la fiche produit
+				echo -e "ref=\"${ref}\"\ngara=\"${gara}\"\na003=\"${a003}\"\na004=\"${a004}\"\na005=\"${a005}\"\na006=\"${a006}\"\na011=\"${a011}\"\na015=\"${a015}\"\na016=\"${a016}\"\na017=\"${a017}\"\na018=\"${a018}\"\na019=\"${a019}\"\na020=\"${a020}\"\na021=\"${a021}\"\na027=\"${a027}\"\na029=\"${a029}\"\na031=\"${a031}\"\na033=\"${a033}\"\na083=\"${a083}\"\na084=\"${a084}\"\na105=\"${a105}\"\na107=\"${a107}\"\na108=\"${a108}\"\na109=\"${a109}\"\na113=\"${a113}\"\na114=\"${a114}\"\na115=\"${a115}\"\na116=\"${a116}\"\na117=\"${a117}\"\na118=\"${a118}\"\na119=\"${a119}\"\na120=\"${a120}\"\na122=\"${a122}\"\na123=\"${a123}\"\na124=\"${a124}\"\na126=\"${a126}\"\na127=\"${a127}\"\na128=\"${a128}\"\na130=\"${a130}\"\na131=\"${a131}\"\na132=\"${a132}\"\na134=\"${a134}\"\na135=\"${a135}\"\na216=\"${a216}\"\na258=\"${a258}\"\na259=\"${a259}\"\na260=\"${a260}\"\na261=\"${a261}\"\na262=\"${a262}\"\npub=\"${pub}\"\nheat=\"${heat}\"\nfloor=\"${floor}\"\netag=\"${etag}\"\nval=\"${val}\"\nval1=\"${val1}\"\nunit=\"${unit}\"\nvent=\"${vent}\"\ntadd=\"${tadd}\"\nveacq=\"${veacq}\"\nqualit=\"${qualit}\"" > ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+				if [ -e "${rept1}/secteur.tmp" ]; then
+					{
+						cp "${rept1}/secteur.tmp" "${rept}/catalogue/fiches/${ref}/data/.secteur-${ref}.tmp"
+						cat "${rept1}/secteur.tmp" >> ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+						rm -f "${rept1}/secteur.tmp"
+					}
+				else
+					{
+						if [ -e "${rept}/catalogue/fiches/${ref}/data/.secteur-${ref}.tmp" ]; then
+							{
+								cat "${rept}/catalogue/fiches/${ref}/data/.secteur-${ref}.tmp" >> ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+							}
+						else
+							{
+								echo -e "secteur=\"\"\ncanton=\"07\"\ndepart=\"09\"" >> ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+							}
+						fi
+					}
+				fi
+				
+				## On reformate la fiche produit
+				sed -i "s/'/’/g" ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
+				
+				## Traduction de la fiche produit pour le script shell en PHP
+				grep '="' "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt" | grep "\"$" > "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.tmp"
+				mv "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.tmp" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt"
+				echo "<?php" > "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				sed "s/$/;/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt" >> "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				sed -i "s/^/$/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				sed -i "s/=\"/ = \"/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				sed -i "s/\$<?php/<?php/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				echo "?>" >> "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				
+				## On récupère la liste des images présentes et on crée le code de la page web
+				cpt1=0
+				for pho in `ls ${rept}/catalogue/fiches/${ref} | grep "jpg"`; do
+					
+					## On inscrit la liste des photos présente dans une variable tableau
+					gr[$cpt1]="| egrep -v '${pho}' "
+					((cpt1++))
+				done
+
+				## On récupère la liste des miniatures à supprimer (celles qui n'ont plus de photos correspondantes)
+				find ${rept}/catalogue/fiches/${ref}/thumb -type f | eval $(echo ${gr[@]} | sed 's/^|//g') | sed "s/^\//rm \//g" | sed 's/\.jpg/\.jpg;/g' >  ${rept}/catalogue/fiches/${ref}/tmp/rm${ref}.tmp
+
+				## On supprime les miniatures inutiles (celles qui n'ont plus de photos correspondantes)
+				[[ -e "${rept}/catalogue/fiches/${ref}/tmp/rm${ref}.tmp" ]] && eval $(cat ${rept}/catalogue/fiches/${ref}/tmp/rm${ref}.tmp)
+
+				## On supprime les photos originales qui ont été retirées (celles qui n'ont plus de photos correspondantes)
+				sed -i 's/thumb\/th/data\/org/g' ${rept}/catalogue/fiches/${ref}/tmp/rm${ref}.tmp
+				sed "s/rm \//mv \//g" "${rept}/catalogue/fiches/${ref}/tmp/rm${ref}.tmp" | sed "s;\.jpg\;;\.jpg ${reptsed}\/catalogue/privees\/photos_supprimees\/\;;g" > "${rept}/catalogue/fiches/${ref}/tmp/mv${ref}.tmp"
+				[[ -e "${rept}/catalogue/fiches/${ref}/tmp/mv${ref}.tmp" ]] && eval $(cat ${rept}/catalogue/fiches/${ref}/tmp/mv${ref}.tmp)
+
+				## On supprime les photos, ou les liens symboliques destinés à la création des affiches qui ont été retirées (celles qui n'ont plus de photos correspondantes)
+				[[ -e "${rept}/catalogue/fiches/${ref}/tmp/rm${ref}1.tmp" ]] && eval $(cat ${rept}/catalogue/fiches/${ref}/tmp/rm${ref}1.tmp)
+
+				## On supprime les fichiers temporaires
+				rm -f ${rept}/catalogue/fiches/${ref}/tmp/*
+				## On écrit le fichier de vérification du transfer
+				echo "${ref}" > "${rept}/catalogue/fiches/${ref}/tmp/${tloc}"
+
+				if [ "${pub}" == "false" ] && [ -d "${rept}/catalogue/fiches/${ref}" ]; then
+					{
+						mv ${rept}/catalogue/fiches/${ref} ${rept}/catalogue/privees/${ref}
+					}
+				fi
+				
+				
+				## Transfert de la fiche vers le site web si utilisation de la version complète et non négociateurs
+				if [[ "${fonct}" != "nego" ]]; then
+					{
+						export MAIN_VIEWER_MOD_WAIT='<window title="viewer_wait_ftp" window_position="1" decorated="false">
+														<vbox>
+															<pixmap>
+															<input file>/usr/share/osagence/pixmaps/transfer.gif</input>
+															</pixmap>
+															<text>
+																<label>Synchronisation en ligne des changements sur '"${ref}"'</label>
+															</text>
+														</vbox>
+													</window>'
+						##Lancer logo
+						gtkdialog --program=MAIN_VIEWER_MOD_WAIT&
+						
+						
+						if [ "${pretrans}" == "oui" ]; then
+							{
+								# Si un prétransfert à eu lieu
+								# On s'assure que le pré transfert soit terminé avant de lancer le transfer définitif
+								wait $PID1
+								
+								# Transfert final
+								if [ "${pub}" == "true" ]; then
+									{
+										lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mv /fiches/a${ref} /fiches/${ref}; mirror -e -R ${rept}/catalogue/fiches/${ref}/ /fiches/${ref}/; rm -rf /privees/${ref}/  ; quit"
+										fold="fiches"
+									}
+								else
+									{
+										lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mv /fiches/a${ref} /fiches/${ref}; mirror -e -R ${rept}/catalogue/privees/${ref}/ /privees/${ref}/ ; rm -rf /fiches/${ref}/ ; quit"								
+										fold="privees"
+									}
+								fi
+							}
+						else
+							{
+								# Transfert final
+								if [ "${pub}" == "true" ]; then
+									{
+										lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e -R ${rept}/catalogue/fiches/${ref}/ /fiches/${ref}/; rm -rf /privees/${ref}/  ; quit"
+										fold="fiches"
+									}
+								else
+									{
+										lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e -R ${rept}/catalogue/privees/${ref}/ /privees/${ref}/ ; rm -rf /fiches/${ref}/ ; quit"
+										fold="privees"
+									}
+								fi
+							}
+						fi
+						## On reset l'image de pogression
+						wmctrl -c viewer_wait_ftp
+						
+						## on supprime fichier temporaire de vérification sur la référence en cours
+						wget -O "/tmp/${tloc}" "${url}${fold}/${ref}/tmp/${tloc}"
+						touch "/tmp/${tloc}" 
+						if [ $(cat /tmp/${tloc} ) == "${ref}" ]; then
+							{
+								rm -f "${rept}/conf/.tmp/${tloc}"
+								rm -f "/tmp/${tloc}"
+							}
+						else
+							{
+								zenity --warning --text="Un incident c’est produit durant le transfert de votre fiche.\nVérifiez votre connexion et tentez de modifier à nouveau la fiche."
+							}
+						fi
+					}
+				else
+					{
+						send=""
+						zenity --question --ok-label="Envoyer" --cancel-label="Plus Tard" --text="Si votre saissie est terminée vous pouvez envoyer votre fiche à l'agence pour validation.\nAttention, après envoi, cette fiche ne vous sera plus accessible.\nSi vous avez des modifications à faire choisissez Plus Tard." && send="oui"
+						
+						if [[ "${send}" == "oui" ]]; then
+							{
+								export MAIN_VIEWER_MOD_WAIT='<window title="viewer_wait_send" window_position="1" decorated="false">
+														<vbox>
+															<pixmap>
+															<input file>/usr/share/osagence/pixmaps/transfer.gif</input>
+															</pixmap>
+															<text>
+																<label>Envoi de la fiche '"${ref}"' à l agence</label>
+															</text>
+														</vbox>
+													</window>'
+								##Lancer logo
+								gtkdialog --program=MAIN_VIEWER_MOD_WAIT&
+								##On crée l'archive de la fiche du bien
+								# Transfert final
+								if [[ ! -d "${rept1}/fiches" ]]; then
+									{
+										mkdir -p "${rept1}/fiches"
+									}
+								fi
+								## On crée un identifiant unique pour la fiche crée
+								idfich="$(echo ${tloc} | sed 's/\.//g' | cut -d'-' -f1)-$(date +%s)"
+								## On crée l'archive et on efface la fiche
+								if [ "${pub}" == "true" ]; then
+									{
+										cd "${rept}/catalogue/fiches/"
+										tar -zcvf "${ref}_${idfich}.tar.gz" "${ref}/"
+										rm -f -r "${rept}/catalogue/fiches/${ref}/"
+										mv "${rept}/catalogue/fiches/${ref}_${idfich}.tar.gz" "${rept1}/fiches/"
+									}
+								else
+									{
+										cd "${rept}/catalogue/privees/"
+										tar -zcvf "${ref}_${idfich}.tar.gz" "${ref}/"
+										rm -f -r "${rept}/catalogue/privees/${ref}/"
+										mv "${rept}/catalogue/privees/${ref}_${idfich}.tar.gz" "${rept1}/fiches/"
+									}
+								fi
+ 
+								## On reset l'image de pogression
+								sleep 4
+								wmctrl -c viewer_wait_send
+								
+								if [ -e "${rept}/conf/osa-url.cfg" ]; then
+									{
+										fic=$(echo "${rept1}/fiches/${ref}_${idfich}.tar.gz" | sed 's;/;\%2F;g')
+										urltest="http://${idstand}:${passstand}@${urlstand}/envoi/envoi.php?fic=${fic}"
+										xdg-open "${urltest}" &
+									}
+								fi
+							}
+						fi
+						
+						## on supprime fichier temporaire de vérification sur la référence en cours
+						rm -f "${rept}/conf/.tmp/${tloc}"
+						rm -f "/tmp/${tloc}"
+					}
+				fi
+						
+				## On vide les variables et supprime les fichiers temporaires
+				rm -f ${rept1}/*.*
+				for uns in `seq 1 294`; do
+					unset "a${uns}"
+				done
+				unset pub
+				unset ref
+				unset unit
+				unset val
+				unset val1
+				unset vent
+				unset gara
+				unset etag
+				unset floor
+				unset copro
+				unset cpproc
+				unset veacq
+			}
+		else
+			{
+				## On reset l'image de progression
+				wmctrl -c viewer_wait
+			}
+		fi
+		
+done
+
+## On supprime le fichier de verrouillage puis on quitte
+rm  -f /tmp/.LOCK
+exit 0

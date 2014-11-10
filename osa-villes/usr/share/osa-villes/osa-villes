@@ -1,0 +1,288 @@
+#!/bin/bash
+##
+
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+## On récupère les emplacements des répertoires de travail de OSagence
+if [ -e "/usr/share/osagence/osa-menu" ]; then
+	{
+		eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+	}
+else
+	{
+		eval "$(grep 'rept1=\"' '/usr/share/osa-villes/osa-ville')"
+	}
+fi
+
+
+if [ -e "${rept1}/rept/rept.cfg" ]; then
+	{
+		eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+	}
+fi
+
+## On vide la variable ville
+ville=""
+
+## Boucle infinie pour relancer le script après chaque opération incompléte
+while true
+	do
+
+		## Saisie du motif de recherche
+		ville=$(zenity --entry --entry-text=${ville} --title="Ville ou CP" --text="Entrez la ville ou le CP")
+
+		## Si aucun motif de recherche on adandonne
+		if [ -z "${ville}" ]; then
+			{
+				## Si un fichier temporaire de la dernière saisie de ville existe on récupère les valeurs
+				if [ -e "/tmp/villemand.tmp" ] || [ -e "/tmp/villemand1.tmp" ]; then
+					{
+						if [ -e "${rept1}/villemand.tmp" ] || [ -e "/tmp/villemand1.tmp" ]; then
+							{
+								eval $(cat ${rept1}/villemand.tmp)
+							}
+						fi
+					}
+				else
+					{
+						if [ -e "${rept1}/ville.tmp" ]; then
+							{
+								eval $(cat ${rept1}/ville.tmp)
+							}
+						fi
+					}
+				fi
+						
+				## Si les variables ville et cp ne sont toujours pas renseignées on prend celles par défaut
+				if [ -z "${a006}" ] && [ -e "${rept}/conf/.var.txt" ]; then
+					{
+						eval "$(grep 'a006=\"' ${rept}/conf/.var.txt)"
+					}
+				fi
+				
+				if [ -z "${a005}" ] && [ -e "${rept}/conf/.var.txt" ]; then
+					{
+						eval "$(grep 'a005=\"' ${rept}/conf/.var.txt)"
+					}
+				fi
+				
+				break
+			}
+		fi
+
+		## On réinitialise les variables
+		unset cpvil
+		unset sort_cpvil
+		stpgt=""
+		lign="0"
+		ep="#"
+		test=$(awk -F"#" '{print $1,"#",$2}' "/usr/share/osa-villes/villes_france.csv" | grep -i "${ville}" | sed "s/ /_/g" | sed "s/\"//g" | sed "s/_#_/#/g")
+		
+		echo "${test}" > /tmp/listvil.tmp
+		
+		
+		if [ $(stat -c "%s" "/tmp/listvil.tmp") -gt "3" ]; then
+			{
+				## On récupère les lignes correspondantes au motif de recherche et on les inscrit dans une variable tableau 
+				for prop in $(</tmp/listvil.tmp); do
+				#`grep -i "${ville}" "/usr/share/osa-villes/villes_france.csv" | sed "s/ /_/g" | sed "s/\"//g"`; do
+				
+					cpvil[$lign]="FALSE $(echo ${prop} | cut -d# -f1,2)"
+					((lign++))
+					## Si le motif retourne plus de 50 résultats on abandonne pour renvoyer à la saisie du motif
+					if [ "${lign}" -gt "50" ]; then
+						{
+							stpgt="stop"
+							break
+						}
+					fi
+				done
+			}
+		else
+			{
+				stpgt="stop"
+			}
+		fi
+
+		## si le motif n'a pas retourné plus de 50 résultats on traite sinon on prévient puis renvoi à la saisie
+		if [ "${stpgt}" != "stop" ]; then
+			{
+				## Mise en forme et tri alphabétique de la fenêtre de sélection de la ville dans les résultats
+				sort_cpvil=$( echo ${cpvil[@]} | sed -e 's/ FALSE/\nFALSE/g'  | sort -d )
+
+				## Fenêtre de sélection du résultat
+				while true
+				do
+					villecx=$(zenity --width=400 --height=800 --list --column "" --radiolist\
+						--title="Choix de la ville et du code postal" \
+						--text="La recherche sur ${ville} retourne ${lign} résultats." \
+						--column="" \
+						${sort_cpvil[@]})
+						
+					if [ "${villecx}" != "" ]; then
+						{
+							break
+						}
+					fi
+				done
+					
+				## Mise en forme des variables Ville et CP
+				a006=$(echo "${villecx}" | cut -d# -f1 | sed "s/_/ /g")
+				a005=$(echo "${villecx}" | cut -d# -f2 )
+				
+						
+				result=$(grep "\"${a006}\"#" "/usr/share/osa-villes/villes_france.csv")
+								
+				canton=$(echo ${result} | cut -d# -f6 | sed 's/"//g')
+				
+				if [ ! -e "/tmp/villemand.tmp" ] && [ ! -e "/tmp/villemand1.tmp" ]; then
+					{
+												
+						if [ "${canton}" -gt "79" ]; then
+							{
+								ct="9"
+														
+								for h in  `seq 9 34`; do
+									numcant="$(echo ${result} | cut -d# -f${h} | sed 's/\"//g')"
+																
+									if [[ "${numcant}" =~ ^[[:digit:]]+$ ]]; then
+										{
+											codcant[$ct]="${numcant}"
+											((ct++))
+										}
+									else
+										{
+											break
+										}
+									fi
+								done
+														
+								bouc=$((${ct}+(${ct}-9)))
+								ct1="9"
+								
+								for g in `seq ${ct} ${bouc}`; do
+									nomcant[$ct1]="FALSE ${codcant[$ct1]}#$(echo ${result} | cut -d# -f${g} | sed 's/ /_/g' | sed 's/\"//g')"
+									((ct1++))
+								done
+								
+								sort_nomcant=$( echo ${nomcant[@]} | sed -e 's/ FALSE #//g' | sed -e 's/ FALSE/\nFALSE/g' | sort -d )
+								nbcant=$((${#nomcant[@]}-1))
+								
+								while true
+								do
+									cantcx=$(zenity --width=400 --height=800 --list --column "" --radiolist\
+									--title="Choix du canton" \
+									--text="${a006} est découpé en ${nbcant} secteurs, choisissez en un." \
+									--column="" \
+									${sort_nomcant[@]})
+									
+									if [ "${cantcx}" != "" ]; then
+										{
+											break
+										}
+									fi
+								done
+							}
+						else
+							{
+								cantcx="${canton}#$(echo ${result} | cut -d# -f9 | sed 's/"//g')"
+							}
+						fi
+						
+						depart="$(echo ${result} | cut -d'#' -f4 | sed 's/"//g')"
+						grpcant="$(echo ${cantcx} | cut -d'#' -f1 )"
+						secteur="$(echo ${cantcx} | cut -d'#' -f2 )"
+						
+						while true
+						do						
+							final=$(zenity --width=400 --height=800 --list --column "" --radiolist\
+									--title="Choix du canton" \
+									--text="Choisissez ce que vous voulez afficher sur le site web." \
+									--column="" \
+									FALSE "${secteur}" \
+									FALSE "${a006}#${a005}" \
+									FALSE "Autre Ville")
+									
+							if [ "${final}" != "" ]; then
+								{
+									break
+								}
+							fi
+						done
+								
+						if [ "${final}" == "Autre Ville" ]; then
+							{
+								villecx=""
+							}
+						fi
+						
+						if [ "${final}" != "${secteur}" ]; then
+							{
+								secteur=""
+							}
+						fi
+						
+						echo -e "secteur=\"${secteur}\"\ncanton=\"${grpcant}\"\ndepart=\"${depart}\"" > "${rept1}/secteur.tmp"
+							
+					}
+				fi
+
+				## Si annulation ou non sélection on revient à la saisie
+				if [ ! -z "${villecx}" ]; then
+					{
+						break
+					}
+				fi
+			}
+		else
+			{
+				## on prévient que le motif a retourné plus de 50 puis renvoi à la saisie
+				zenity --warning --text="Votre recherche retourne un trop grand nombre ou aucun résultats.\nVeuillez être plus précis."
+			}
+		fi
+	done
+
+	## On écrit les variables dans un fichier temporaire
+	if [ -e "/tmp/villemand.tmp" ] || [ -e "/tmp/villemand1.tmp" ]; then
+		{
+			if [ -e "/tmp/villemand1.tmp" ]; then
+				{
+					echo -e "a108=\"${a005}\"\na109=\"${a006}\"" > "${rept1}/villemand1.tmp"
+				}
+			fi
+				
+			if [ -e "/tmp/villemand.tmp" ]; then
+				{
+					echo -e "a118=\"${a005}\"\na119=\"${a006}\"" > "${rept1}/villemand.tmp"
+				}
+			fi
+		}
+	else
+		{
+			echo -e "a005=\"${a005}\"\na006=\"${a006}\"" > "${rept1}/ville.tmp"
+		}
+	fi
+	
+	rm -f /tmp/villemand.tmp
+	rm -f /tmp/villemand1.tmp
+	exit 0
+
+

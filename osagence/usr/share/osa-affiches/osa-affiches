@@ -1,0 +1,361 @@
+#!/bin/bash
+##
+
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+
+
+## On récupère les emplacements des répertoires de travail de OSagence
+eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+
+## On vérifie l'existence des paramètres secrets (non fournis aux négociateurs)
+if [ ! -e "${rept}/conf/osa-sec.cfg" ]; then
+	{
+		exit 0
+	}
+fi
+
+rept_aff="$HOME/Hubic/Document_biens"
+liste_diffusion=$(cat "${rept}"/affiches/.liste-diffusion.txt | sed 's/^/ /g' | tr '\n' ',')
+
+rm -f -R "${rept1}/affiches-tmp"
+while true
+do
+	bien=$(zenity --entry --entry-text="00000" --title="N° de mandat" --text="Entrez le N° de mandat")
+	
+	if [ "${bien}" == "" ]; then
+		{
+			break
+		}
+	fi
+	
+	## On formate le n° de mandat
+	if [ "${#bien}" -lt "5" ]; then
+				{
+					bien="$(echo '00000' | tail -c 6 | cut -c1-$((5-${#bien})))${bien}"
+				}
+			else
+				{
+					bien="$(echo ${bien} | tail -c 6 )"
+				}
+			fi
+
+	tplt=($(ls ${rept}/affiches | grep ".odt" | grep "^tpl-"))
+	c="1"
+	for tpl in "${tplt[@]}"; do
+		chtpl[$c]="FALSE ${tpl}"
+		((c++))
+		
+	done
+
+
+	sort_chtpl=$( echo ${chtpl[@]} | sed -e 's/ FALSE/\nFALSE/g' )
+
+	fichiercx=$(zenity --width=400 --height=400 --list --column "" --checklist\
+						--title="Choix du ou des fiches à créer" \
+						--text="Choisissez une ou plusieurs fiches" \
+						--column="" \
+						${sort_chtpl[@]} )
+						
+	fichiercx1="$(echo ${fichiercx} | sed 's/|/ /g')"
+	fichiercx2=(${fichiercx1})
+
+	for fichier in "${fichiercx2[@]}"; do
+
+		fichout="$(echo ${fichier} | sed 's/^tpl//g')"
+		
+		if [ -e "${rept_aff}/${bien}/${bien}${fichout}" ]; then
+			{
+				zenity --question --ok-label="Garder" --text="Le fichier ${bien}${fichout}\nexiste déjà cliquez Garder\npour ouvrir ou Non pour le recréer" || nouv="Nouveau"
+			}
+		else
+			{
+				nouv="Nouveau"
+			}
+		fi
+			
+		if [ -e "${rept}/catalogue/fiches/${bien}/data/.var-${bien}.txt" ]; then
+			{
+				if [ "${nouv}" == "Nouveau" ]; then
+					{
+						eval "$(cat ${rept}/catalogue/fiches/${bien}/data/.var-${bien}.txt)"
+						
+						## Mention du négociateur
+						if [ -z "${qualit}" ]; then
+							{
+								qualit="agent commercial"
+							}
+						fi
+						nmnego="Affaire suivie par $(echo ${a123} | cut -d' ' -f1), ${qualit}."
+						qualit=""
+						
+						## Ajout nom négotiateur et mention Alur pour mandats charge acquéreur
+						if [ "${veacq}" = "true" ]; then
+							{
+								if [ "${a011}" -lt "75001" ]; then
+									{
+										alur="incluant les honoraires d'agence de 4% (minimum de 3000€) à la charge de l'acquéreur."
+									}
+								else
+									{
+										alur="incluant les honoraires d'agence de 4% à la charge de l'acquéreur."
+									}
+								fi
+							}
+						else
+							{
+								alur="Honoraires d'agence inclus."
+							}
+						fi
+						
+						if [ "${fichier}" == "tpl-affiche-vitrine.odt" ]; then
+							{
+								rm -f "${rept}/affiches/tpl-affiche-vitrine.odt"
+								if [ "${#a021}" -gt "1900" ]; then
+									{
+										cp "${rept}/affiches/Options/tpl-4000-affiche-vitrine.odt" "${rept}/affiches/tpl-affiche-vitrine.odt"
+									}
+								elif [ "${#a021}" -gt "1000" ]; then
+									{
+										cp "${rept}/affiches/Options/tpl-1900-affiche-vitrine.odt" "${rept}/affiches/tpl-affiche-vitrine.odt"
+									}
+								else
+									{
+										cp "${rept}/affiches/Options/tpl-affiche-vitrine.odt" "${rept}/affiches/tpl-affiche-vitrine.odt"
+									}
+								fi
+							}
+						fi
+						
+						if [ "${fichier}" == "tpl-fiche-client.odt" ]; then
+							{
+								rm -f "${rept}/affiches/tpl-fiche-client.odt"
+								if [ "${#a021}" -gt "1900" ]; then
+									{
+										cp "${rept}/affiches/Options/tpl-4000-fiche-client.odt" "${rept}/affiches/tpl-fiche-client.odt"
+									}
+								elif [ "${#a021}" -gt "1000" ]; then
+									{
+										cp "${rept}/affiches/Options/tpl-1900-fiche-client.odt" "${rept}/affiches/tpl-fiche-client.odt"
+									}
+								else
+									{
+										cp "${rept}/affiches/Options/tpl-fiche-client.odt" "${rept}/affiches/tpl-fiche-client.odt"
+									}
+								fi
+							}
+						fi
+					
+						mkdir  "${rept1}/affiches-tmp"
+						unzip -d "${rept1}/affiches-tmp" "${rept}/affiches/${fichier}"
+						
+						echo 'echo ${fich} |' > ${rept1}/affiches-tmp/com1.tmp
+						perl -0777 -ne 'print "sed \"s\;\\\@\\\@$1\\\@\\\@\;\${$1}\;g\" | " while /@@(.*?)@@/sg' "${rept1}/affiches-tmp/content.xml" >> "${rept1}/affiches-tmp/com1.tmp"
+						echo " > \"${rept1}/affiches-tmp/content.xml\"" >> "${rept1}/affiches-tmp/com1.tmp"
+						cat "${rept1}/affiches-tmp/com1.tmp" | tr '\n' ' ' | sed 's/" |  > "/" > "/g' > "${rept1}/affiches-tmp/com2.tmp"
+						rm -f ${rept1}/affiches-tmp/com1.tmp
+										
+
+						if [ ! -z "${secteur}" ]; then
+							{
+								lieu="${secteur}"
+							}
+						else
+							{
+								lieu="à ${a006}"
+							}
+						fi
+						
+						if [ "${fichier}" == "tpl-affiche-vitrine.odt" ] || [ "${fichier}" == "tpl-fiche-client.odt" ] ||  [ "${fichier}" == "tpl-fiche-privee.odt" ]; then
+							{
+								if [ "${val}" != "-1" ] && [ "${val}" != "NS" ] && [ "${val}" != "VI" ]; then
+									{
+										rm -f "${rept1}/affiches-tmp/Pictures/1000020100000205000001C2BA8182C1.png"
+										cp "${rept}/catalogue/fiches/${bien}/${bien}-0.jpg" "${rept1}/affiches-tmp/Pictures/1000020100000205000001C2BA8182C1.jpg"
+										convert "${rept1}/affiches-tmp/Pictures/1000020100000205000001C2BA8182C1.jpg" "${rept1}/affiches-tmp/Pictures/1000020100000205000001C2BA8182C1.png"
+										rm -f "${rept1}/affiches-tmp/Pictures/1000020100000205000001C2BA8182C1.jpg"
+									}
+								fi
+								
+								if [ "${val1}" != "-1" ] && [ "${val1}" != "NS" ] && [ "${val1}" != "VI" ];then
+									{
+										if [ "${fichier}" == "tpl-fiche-client.odt" ] || [ "${fichier}" == "tpl-fiche-privee.odt" ]; then
+											{
+												rm -f "${rept1}/affiches-tmp/Pictures/1000020100000205000001C23D7E612D.png"
+												cp "${rept}/catalogue/fiches/${bien}/${bien}-0g.jpg" "${rept1}/affiches-tmp/Pictures/1000020100000205000001C23D7E612D.jpg"
+												convert "${rept1}/affiches-tmp/Pictures/1000020100000205000001C23D7E612D.jpg" "${rept1}/affiches-tmp/Pictures/1000020100000205000001C23D7E612D.png"
+												rm -f "${rept1}/affiches-tmp/Pictures/1000020100000205000001C23D7E612D.jpg"
+											}
+										fi
+									}
+								fi
+							}
+						fi
+
+						if [ "${fichier}" == "tpl-affiche-vitrine.odt" ] || [ "${fichier}" == "tpl-fiche-client.odt" ] || [ "${fichier}" == "tpl-fiche-privee.odt" ]; then
+							{
+								rm -f "${rept1}/affiches-tmp/Pictures/1000000000000400000002A84F22AD4A.jpg"
+								phot=$(ls -v "${rept}/catalogue/fiches/${bien}" | grep ".jpg" | grep -v "\-0" | head -1)
+								cp "${rept}/catalogue/fiches/${bien}/${phot}" "${rept1}/affiches-tmp/Pictures/1000000000000400000002A84F22AD4A.jpg"
+							}
+						fi
+						
+						nbph=($(ls -v "${rept}/catalogue/fiches/${bien}" | grep ".jpg" | grep -v "\-0"))
+						
+						if [ "${#nbph[@]}" == "1" ]; then
+							{
+								nbph="Une photo est disponible pour ce bien."
+							}
+						elif [ "${#nbph[@]}" == "0" ]; then
+							{
+								nbph=""
+							}
+						else
+							{
+								nbph="${#nbph[@]} photos sont disponibles pour ce bien."
+							}
+						fi
+						
+						if [ "${etag}" == "<item>Nb étages</item><item>à l étage</item>" ]; then
+							{
+								niveau="Nombre d'étages: ${floor}"
+							}
+						else
+							{
+								niveau="au ${floor} étage"
+							}
+						fi
+						
+						day=$(echo ${a113} | cut -d/ -f1)
+						month=$(echo ${a113} | cut -d/ -f2)
+						year=$(echo ${a113} | cut -d/ -f3)
+						
+						if [ "${a083}" == "true" ]; then
+							{
+								exclu="EXCLUSIF 2%"
+								duree="3 mois"
+								month=$((${month}+3))
+								month="$(echo '000' | cut -c1-$((3-${#month})))${month}"
+								month="${month:1:3}"
+								echo "${month}"
+								
+								if [ "${month}" -gt "12" ]; then
+									{
+										month=$((${month}-12))
+										month="$(echo '000' | cut -c1-$((3-${#month})))${month}"
+										month="${month:1:3}"
+										
+										year=$((${year}+1))
+									}
+								fi
+								
+								if [ "${day}" == "31" ]; then
+									{
+										if [ "${month}" == "04" ] || [ "${month}" == "06" ] || [ "${month}" == "09" ]  || [ "${month}" == "11" ]; then
+											{
+												month=$((${month}+1))
+												month="$(echo '000' | cut -c1-$((3-${#month})))${month}"
+												month="${month:1:3}"
+												day="01"
+											}
+										fi
+									}
+								fi
+								
+								if [ "${month}" == "02" ]; then
+									{
+										if [ $((year % 4)) -eq 0 -a $year -ne 1900 ] && [ "$day" -gt "29" ];then
+											{
+												month="03"
+												day=$((${day}-29))
+												day="$(echo '000' | cut -c1-$((3-${#day})))${day}"
+												day="${day:1:3}"
+											}
+										elif [ "$day" -gt "28" ];then
+											{
+												month="03"
+												day=$((${day}-28))
+												day="$(echo '000' | cut -c1-$((3-${#day})))${day}"
+												day="${day:1:3}"
+											}
+										fi
+									}
+								fi
+								#ech1=$(($(date -d "${year}-${month}-${day}" +"%s")+6566400))
+								#ech=$(date -d @"${ech1}" +"%d/%m/%y")
+								ech="${day}/${month}/${year}"
+							}
+						else
+							{
+								exclu=""
+								duree="12 mois"
+								year=$((${year}+1))
+								
+								if [ "${month}" == "02" ] && [ "${day}" == "29" ]; then
+									{
+										if [ $((year % 4)) -ne 0 -o $year -eq 1900 ]; then
+											{
+												month="03"
+												day="01"
+											}
+										fi
+									}
+								fi
+								
+								ech="${day}/${month}/${year}"
+								#ech1=$(($(date -d "${year}-${month}-${day}" +"%s")+30326400))
+								#ech=$(date -d @"${ech1}" +"%d/%m/%y")
+							}
+						fi
+						
+						
+						
+						prix="$((${a011}+${a015})) €"
+						
+
+						fich="$(cat ${rept1}/affiches-tmp/content.xml)"
+						
+						eval "$(cat ${rept1}/affiches-tmp/com2.tmp)"
+						
+						#mv "${rept1}/affiches-tmp/com2.tmp" "${rept1}/com2.tmp"
+						rm -f ${rept1}/affiches-tmp/com2.tmp
+						
+						cd "${rept1}/affiches-tmp/"
+						zip -r "${rept1}/${bien}${fichout}" .
+						mkdir -p "${rept_aff}/${bien}"
+						mv "${rept1}/${bien}${fichout}" "${rept_aff}/${bien}/${bien}${fichout}"
+					}
+				fi
+				
+				libreoffice --writer "${rept_aff}/${bien}/${bien}${fichout}" &
+			}
+		else
+			{
+				zenity --warning --text="Le n° de mandat demandé n'existe pas"
+			}
+		fi
+		rm -f -R "${rept1}/affiches-tmp"
+
+	done
+done
+
+exit 0

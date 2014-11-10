@@ -1,0 +1,7 @@
+#! /bin/bash
+
+ln -s /usr/share/osagence/osa-menu /usr/bin/osa-menu
+
+exit 0
+
+

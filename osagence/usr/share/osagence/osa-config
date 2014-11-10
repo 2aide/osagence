@@ -1,0 +1,400 @@
+#!/bin/bash
+##
+
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+
+## On récupère les emplacements des répertoires de travail de OSagence
+eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+
+if [ ! -d "${rept}/conf/sauvegarde_conf" ]; then
+	{
+		mkdir "${rept}/conf/sauvegarde_conf"
+	}
+fi
+
+## On vérifie l'existence des paramètres secrets (non fournis aux négociateurs)
+if [ -e "${rept}/conf/osa-sec.cfg" ]; then
+	{
+		eval $(grep "mdp=\"" "${rept}/conf/osa-sec.cfg")
+	}
+else
+	{
+		exit 0
+	}
+fi
+
+## On vérifie l'existance du paquet Geany
+if [ -e /usr/bin/geany ]; then
+	{
+		gean="geany"
+	}
+else
+	{
+		#On récupère l'application par défaut pour le texte brut
+		gean="$(xdg-mime query default text/plain | sed 's/\.desktop//g')"
+	}
+fi
+						
+if [ "${gean}" == "" ]; then
+	{
+		gean="xdg-open"
+	}
+fi
+
+text=""
+while true
+do
+	mdp1=$(zenity --entry --entry-text="${text}" --title="Configuration OSagence" --text="Entrez votre mot de passe.")
+
+	if [ $? != "0" ]; then
+		{
+			exit 0
+		}
+	fi
+
+	if [ "${mdp1}" == "${mdp}" ]; then
+		{
+			break
+		}
+	else
+		{
+			text="mot de passe erroné"
+		}
+	fi
+done
+			
+while true
+do
+
+	export MAIN_DIALOG='<window title="Configuration OSagence" window_position="1" decorated="true">
+									<vbox>
+										<hbox>
+											<button>
+												<label>"Mise à jour OSagence"</label>
+											</button>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Gestion collaborateurs"</label>
+											</button>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Valeurs par défaut"</label>
+											</button>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Champs choix multiples"</label>
+											</button>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Configuration OSagence et DPE/GES"</label>
+											</button>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Gestion plateformes de diffusion"</label>		
+											</button>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Quitter"</label>
+											</button>
+										</hbox>
+									</vbox>
+										
+								</window>'
+								
+							eval $(gtkdialog --program=MAIN_DIALOG)
+							
+							
+	if [ "${EXIT}" == "Mise à jour OSagence" ]; then
+		{
+			chmod +x $HOME/Hubic/.scripts/maj-osa.sh; $HOME/Hubic/.scripts/maj-osa.sh
+			exit 0
+		}
+	fi
+	
+	if [ "${EXIT}" != "Quitter" ]; then
+		{
+			## On sauvegarde les fichiers de configuration 
+			cp "${rept}/conf/.negociateur.txt" "${rept}/conf/sauvegarde_conf/.negociateur.txt"
+			cp "${rept}/conf/.var.txt" "${rept}/conf/sauvegarde_conf/.var.txt"
+			cp "${rept}/conf/.langues.txt" "${rept}/conf/sauvegarde_conf/.langues.txt"
+			cp "${rept}/conf/.types-annonce.txt" "${rept}/conf/sauvegarde_conf/.types-annonce.txt"
+			cp "${rept}/conf/.types-de-biens.txt" "${rept}/conf/sauvegarde_conf/.types-de-biens.txt"
+			cp "${rept}/conf/.chauffage.txt" "${rept}/conf/sauvegarde_conf/.chauffage.txt"
+			cp "${rept}/conf/osa.cfg" "${rept}/conf/sauvegarde_conf/osa.cfg"
+			cp "${rept}/conf/osa-sec.cfg" "${rept}/conf/sauvegarde_conf/osa-sec.cfg"
+			cp "${rept}/conf/config-dpe.cfg" "${rept}/conf/sauvegarde_conf/config-dpe.cfg"
+			cp "${rept}/conf/poliris.cfg" "${rept}/conf/sauvegarde_conf/poliris.cfg"
+			
+			## On zipe la sauvegarde
+			cd "${rept}/conf/sauvegarde_conf/"
+			zip "$(date +%Y-%m-%d_%H-%M-%S).zip" ".negociateur.txt" ".var.txt" ".langues.txt" ".types-annonce.txt" ".types-de-biens.txt" ".chauffage.txt" "osa.cfg" "osa-sec.cfg" "config-dpe.cfg" "poliris.cfg"
+			
+			rm -f "${rept}/conf/sauvegarde_conf/.negociateur.txt"
+			rm -f "${rept}/conf/sauvegarde_conf/.var.txt"
+			rm -f "${rept}/conf/sauvegarde_conf/.langues.txt"
+			rm -f "${rept}/conf/sauvegarde_conf/.types-annonce.txt"
+			rm -f "${rept}/conf/sauvegarde_conf/.types-de-biens.txt"
+			rm -f "${rept}/conf/sauvegarde_conf/.chauffage.txt"
+			rm -f "${rept}/conf/sauvegarde_conf/osa.cfg"
+			rm -f "${rept}/conf/sauvegarde_conf/osa-sec.cfg"
+			rm -f "${rept}/conf/sauvegarde_conf/config-dpe.cfg"
+			rm -f "${rept}/conf/sauvegarde_conf/poliris.cfg"
+			## Supprime les sauvegardes de plus de 10 jours
+			find "${rept}/conf/sauvegarde_conf/" -type f -mtime +10 -exec ls -l "{}" ";"
+		}
+	fi
+							
+	if [ "${EXIT}" == "Valeurs par défaut" ]; then
+		{
+			eval $(${gean} "${rept}/conf/.var.txt")
+		}
+	elif [ "${EXIT}" == "Champs choix multiples" ]; then
+		{
+			eval $(${gean} "${rept}/conf/.langues.txt" | ${gean} "${rept}/conf/.types-annonce.txt" | ${gean} "${rept}/conf/.types-de-biens.txt" | ${gean} "${rept}/conf/.chauffage.txt")
+		}
+	elif [ "${EXIT}" == "Configuration OSagence et DPE/GES" ]; then
+		{
+			eval $(${gean} "${rept}/conf/osa.cfg" | ${gean} "${rept}/conf/osa-sec.cfg" | ${gean} "${rept}/conf/config-dpe.cfg")
+		}
+	elif [ "${EXIT}" == "Gestion plateformes de diffusion" ]; then
+		{
+			eval $(${gean} "${rept}/conf/poliris.cfg")
+		}
+	elif [ "${EXIT}" == "Gestion collaborateurs" ]; then
+		{
+			zenity --question --ok-label="Ajouter" --cancel-label="Éditer" --text="Voulez-vous ajouter ou éditer un collaborateur ?" && ajout="oui"
+			if [ "${ajout}" == "oui" ]; then
+				{
+					## On Renseigne le nouveau collaborateur
+					export MAIN_DIALOG='<window title="Ajout de collaborateur" decorated="true" window_position="1" icon-name="gtk-home">
+										<vbox>
+											<hbox>
+												<text>
+													<label>"Nom et prénom"</label>
+												</text>
+												<entry>
+													<variable>colnm</variable>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"E.mail"</label>
+												</text>
+												<entry>
+													<variable>colmail</variable>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"Téléphone"</label>
+												</text>
+												<entry>
+													<variable>coltel</variable>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"En qualité de"</label>
+												</text>
+												<entry>
+													<variable>colqu</variable>
+												</entry>
+											</hbox>
+											<hbox>
+												<button>
+													<label>"Quitter"</label>
+												</button>
+												<button>
+													<label>"Créer collaborateur"</label>
+												</button>
+											</hbox>
+										</vbox>
+									<action signal="delete-event">exit:"Quitter"</action>
+								</window>'
+
+					eval $(gtkdialog --program=MAIN_DIALOG)
+					
+					if [ "${EXIT}" == "Créer collaborateur" ]; then
+						{
+							grep -v "^#" "${rept}/conf/.negociateur.txt" > "/tmp/osa-negociateurs1.txt"
+							grep "^#" "${rept}/conf/.negociateur.txt" > "/tmp/osa-negociateurs2.txt"
+							cat "/tmp/osa-negociateurs1.txt" > "${rept}/conf/.negociateur.txt"
+							echo "<item>\"${colnm}\"</item>#${colmail}#${coltel}#${colqu}" >> "${rept}/conf/.negociateur.txt"
+							cat "/tmp/osa-negociateurs2.txt" >> "${rept}/conf/.negociateur.txt"
+							rm -f "/tmp/osa-negociateurs1.txt"
+							rm -f "/tmp/osa-negociateurs2.txt"
+						}
+					fi
+				}
+			else
+				{
+					collab=$(grep -v "^#" "${rept}/conf/.negociateur.txt" | cut -d# -f1 | tr -d '\n')
+					
+					export MAIN_DIALOG='<window title="Édition des collaborateurs" decorated="true" window_position="1" icon-name="gtk-home">
+												<vbox>
+													<hbox>
+														<text>
+															<label>"Négociateur: "</label>
+														</text>
+														<combobox>
+															<variable>colout</variable>
+															'${collab}'
+														</combobox>
+													</hbox>
+													<hbox>
+														<button>
+															<label>"Valider"</label>
+														</button>
+													</hbox>
+												</vbox>
+										</window>'
+
+					eval $(gtkdialog --program=MAIN_DIALOG)
+					
+					if [ "${EXIT}" == "Valider" ]; then
+						{
+							
+							colnm=$(grep "${colout}" "${rept}/conf/.negociateur.txt" | cut -d# -f1 | sed 's/<item>"//g' | sed 's;"</item>;;g')
+							colmail=$(grep "${colout}" "${rept}/conf/.negociateur.txt" | cut -d# -f2 )
+							coltel=$(grep "${colout}" "${rept}/conf/.negociateur.txt" | cut -d# -f3 )
+							colqu=$(grep "${colout}" "${rept}/conf/.negociateur.txt" | cut -d# -f4 )
+							if [ -z "${colnm}" ]; then
+								{
+									colnm="Prénom nom"
+								}
+							fi
+							
+							if [ -z "${colmail}" ]; then
+								{
+									colmail="E.mail"
+								}
+							fi
+							
+							if [ -z "${coltel}" ]; then
+								{
+									coltel="n° tél"
+								}
+							fi
+							
+							if [ -z "${colqu}" ]; then
+								{
+									colqu="fonction"
+								}
+							fi
+							
+							export MAIN_DIALOG='<window title="Modification de collaborateur" decorated="true" window_position="1" icon-name="gtk-home">
+										<vbox>
+											<hbox>
+												<text>
+													<label>"Nom et prénom"</label>
+												</text>
+												<entry>
+													<variable>colnm</variable>
+													<default>'"${colnm}"'</default>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"E.mail"</label>
+												</text>
+												<entry>
+													<variable>colmail</variable>
+													<default>'"${colmail}"'</default>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"Téléphone"</label>
+												</text>
+												<entry>
+													<variable>coltel</variable>
+													<default>'"${coltel}"'</default>
+												</entry>
+											</hbox>
+											<hbox>
+												<text>
+													<label>"En qualité de"</label>
+												</text>
+												<entry>
+													<variable>colqu</variable>
+													<default>'"${colqu}"'</default>
+												</entry>
+											</hbox>
+											<hbox>
+												<button>
+													<label>"Supprimer collaborateur"</label>
+												</button>
+												<button>
+													<label>"Modifier collaborateur"</label>
+												</button>
+												<button>
+													<label>"Quitter"</label>
+												</button>
+											</hbox>
+										</vbox>
+									<action signal="delete-event">exit:"Quitter"</action>
+								</window>'
+
+					eval $(gtkdialog --program=MAIN_DIALOG)
+					
+							if [ "${EXIT}" == "Modifier collaborateur" ]; then
+								{
+									grep -v "^#" "${rept}/conf/.negociateur.txt" > "/tmp/osa-negociateurs0.txt"
+									grep -v "${colnm}" "/tmp/osa-negociateurs0.txt" > "/tmp/osa-negociateurs1.txt"
+									grep "^#" "${rept}/conf/.negociateur.txt" > "/tmp/osa-negociateurs2.txt"
+									cat "/tmp/osa-negociateurs1.txt" > "${rept}/conf/.negociateur.txt"
+									echo "<item>\"${colnm}\"</item>#${colmail}#${coltel}#${colqu}" >> "${rept}/conf/.negociateur.txt"
+									cat "/tmp/osa-negociateurs2.txt" >> "${rept}/conf/.negociateur.txt"
+									rm -f "/tmp/osa-negociateurs0.txt"
+									rm -f "/tmp/osa-negociateurs1.txt"
+									rm -f "/tmp/osa-negociateurs2.txt"
+								}
+							elif [ "${EXIT}" == "Supprimer collaborateur" ]; then
+								{
+									zenity --question --ok-label="Annuler" --cancel-label="SUPPRIMER" --text="Voulez-vous supprimer ${colnm} de la liste des collaborateurs ?" || suppress="oui"
+									if [ "${suppress}" == "oui" ]; then
+										{
+											grep -v "${colnm}" "${rept}/conf/.negociateur.txt" > "/tmp/osa-negociateurs.txt"
+											mv "/tmp/osa-negociateurs.txt" "${rept}/conf/.negociateur.txt"
+										}
+									fi
+								}
+							fi
+						}
+					fi
+				}
+			fi
+		}
+	else
+		{
+			exit 0
+		}
+	fi
+done
+exit 0

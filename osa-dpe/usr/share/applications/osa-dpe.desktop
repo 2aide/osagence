@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=0.02.00
+Name=OSa-dpe
+GenericName=Agence immobilière libre
+Comment=Générateur étiquettes énergétiques
+Exec=/usr/bin/osa-gui-dpe
+Terminal=false
+X-MultipleArgs=false
+Type=Application
+Icon=osa-gui-dpe
+Categories=Office;Publishing;
+MimeType=script shell (application/x-shellscript);
+StartupWMClass=osa-dpe
+StartupNotify=true
+Name[fr]=osa-dpe
+Name[fr_FR]=osa-dpe

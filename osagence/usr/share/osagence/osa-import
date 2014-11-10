@@ -1,0 +1,330 @@
+#!/bin/bash
+##
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+## On récupère les emplacements des répertoires de travail de OSagence
+eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+
+## On vérifie l'existence des paramètres secrets (non fournis aux négociateurs)
+if [ ! -e "${rept}/conf/osa-sec.cfg" ]; then
+	{
+		exit 0
+	}
+fi
+
+## Lecture de la configuration
+eval $(grep -v "^#" "${rept}/conf/osa-sec.cfg")
+eval $(grep "miap=\"" "${rept}/conf/osa.cfg")
+
+## Si le répertoire d'import des fiches n'existe pas on le crée
+if [[ ! -d "${rept1}/fiches" ]]; then
+	{
+		mkdir -p "${rept1}/fiches"
+	}
+fi
+
+## Choix import ou renommage/suppression		
+import=""
+if [ -z $(ls -a ${rept1}/fiches | grep ".tar.gz") ]; then
+	{
+		zenity --question --ok-label="Importer" --cancel-label="Renommer/supprimer" --text="Voulez-vous importer une fiche d un négociateur ?\nOU\nSupprimer ou renommer une fiche existante ?" && import="oui"
+	}
+else
+	{
+		import="oui"
+	}
+fi
+
+## Si import on récupère les fiches des négociateurs
+if [ "${import}" == "oui" ]; then
+	{
+lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
+mirror -e /envoi/upload/ ${rept1}/fiches
+quit 0
+EOF
+	}
+else
+	{
+		## Sinon on renseigne le n° de la fiche à renommer ou supprimer
+		while true
+		do
+			ref=$(zenity --entry --entry-text="00000" --title="N° de mandat" --text="Entrez le N° de mandat de la fiche à supprimer ou renommer")
+			
+			## On formate le n° de mandat
+			if [ "${#ref}" -lt "5" ]; then
+				{
+					ref="$(echo '00000' | tail -c 6 | cut -c1-$((5-${#ref})))${ref}"
+				}
+			else
+				{
+					ref="$(echo ${ref} | tail -c 6 )"
+				}
+			fi
+			
+			if [ -d "${rept}/catalogue/fiches/${ref}" ]; then
+				{
+					## Si fiche publique on déplace vers le répertoire d'import des fiches
+					mv "${rept}/catalogue/fiches/${ref}" "${rept1}/fiches/${ref}"
+					break
+				}
+			elif [ -d "${rept}/catalogue/privees/${ref}" ]; then
+				{
+					## Si fiche privée on déplace vers le répertoire d'import des fiches
+					mv "${rept}/catalogue/privees/${ref}" "${rept1}/fiches/${ref}"
+					break
+				}
+			else
+				{
+					## Si pas de n° de fiche on quitte
+					if [ "${ref}" == "" ]; then
+						{
+							exit 0
+						}
+					fi
+					
+					## si le n° de fiche n'existe pas on prévient puis on boucle
+					timeout 60 zenity --warning --text="Le n° de mandat demandé n'existe pas"
+				}
+			fi
+		done
+		
+		## On ce place dans le répertoire d'import des fiches
+		cd "${rept1}/fiches/"
+		
+		## On crée un fichier d'import compressé de la fiche
+		tar -zcvf "${ref}_renomme.tar.gz" "${ref}/"
+		rm -f -r "${rept1}/fiches/${ref}"
+	}
+fi
+
+## On récupére puis traite tous les fichiers d'import compressés
+for ficzip in $(ls -a ${rept1}/fiches | grep ".tar.gz"); do
+	
+	## On demande si on veux traiter la fiche reçue
+	trait=""
+	zenity --question --ok-label="Traiter" --cancel-label="Ignorer" --text="Vouslez-vous traiter la fiche $(echo ${ficzip} | sed 's/\.tar\.gz//g') ?" && trait="oui"
+	
+	if [ "${trait}" == "oui" ]; then
+		{
+			## On ce place dans le répertoire d'import des fiches
+			cd "${rept1}/fiches/"
+			
+			## On décompresse le fichier d'import
+			tar -zxvf "${rept1}/fiches/${ficzip}"
+			## On récupére le n° de mandat du fichier d'import décompressé
+			ref="$(echo ${ficzip} | cut -d'_' -f1)"
+			
+			## On prépare la visualisation des 5 premières photos de la fiche courante
+			for phot in $(ls -v ${rept1}/fiches/${ref}/thumb | grep ".jpg" | grep -v "\-0.jpg" | grep -v "\-0g.jpg"); do
+														
+				label=$(echo ${phot%.*} | cut -d- -f2)
+
+				visu[$cpt1]="<pixmap><width>${miap}</width><input file>\"${rept1}/fiches/${ref}/thumb/${phot}\"</input></pixmap>"
+				((cpt1++))
+					
+				if [ "${cpt1}" == "5" ]; then
+					{
+						break
+					}
+				fi
+			done
+			
+			## Sélection des valeurs affichées dans l'aperçu rapide de la fiche courante
+			grep "a005=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2 > "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			grep "a006=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2 >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			grep "a020=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2 >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			grep "a003=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2 >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			echo "prix HT: $(grep "a011=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2)" >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			echo "Honoraires: $(grep "a015=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2)"  >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			echo "public: $(grep "pub=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2)" >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			echo "en vente: $(grep "vent=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2)" >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			echo "coup de coeur: $(grep "a084=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2)" >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			echo "négociateur: $(grep "a123=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2)" >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			grep "a114=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2 >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			grep "a115=" "${rept1}/fiches/${ref}/data/.var-${ref}.txt" | cut -d\" -f2 >> "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+			
+			while true
+			do
+				## Affichage rapide de la fiche courante
+				export MAIN_DIALOG='<window title="OSagence, aperçu de bien choisi." decorated="true" window_position="1" icon-name="gtk-home">
+										<vbox>
+										<hbox>
+										'${visu[@]}'
+										</hbox>
+										<frame "Aperçu du bien n° '${ref}'">
+											<text>
+												<input file>'${rept1}'/fiches/'${ref}'/tmp/.var-court-'${ref}'.txt</input>
+											</text>
+										</frame>
+										<hbox>
+											<text>
+												<label>"Nouveau n° de Mandat"</label>
+											</text>
+											<entry>
+												<variable>ref1</variable>
+												<width>300</width><height>25</height>
+												<default>'"${ref}"'</default>
+												<action signal="activate">exit:'"Valider ce bien"'</action>
+											</entry>
+										</hbox>
+										<hbox>
+											<button>
+												<label>"Valider ce bien"</label>
+											</button>
+											<button>
+												<label>"Supprimer ce bien"</label>
+											</button>
+										</hbox>
+										</vbox>
+										<action signal="delete-event">exit:"quitter"</action>
+									</window>'
+
+				eval $(gtkdialog --program=MAIN_DIALOG)
+				
+				## si quitter on supprime les fichiers décompressés et le fichier compressé puis on quitte
+				if [ "${EXIT}" == "quitter" ]; then
+					{
+						rm -f "${rept1}/fiches/${ficzip}"
+						rm -f -r "${rept1}/fiches/${ref}"
+						exit 0
+					}
+				fi
+				
+				## On formate le n° de mandat
+				if [ "${#ref1}" -lt "5" ]; then
+					{
+						ref1="$(echo '00000' | tail -c 6 | cut -c1-$((5-${#ref1})))${ref1}"
+					}
+				else
+					{
+						ref1="$(echo ${ref1} | tail -c 6 )"
+					}
+				fi
+				
+				## Si le numéro choisi n'est pas utilisé on poursuit
+				if [ ! -d "${rept}/catalogue/privees/${ref1}" ] && [ ! -d "${rept}/catalogue/fiches/${ref1}" ]; then
+					{
+						break
+					}
+				elif [ "${EXIT}" != "Supprimer ce bien" ]; then
+					{
+						## Si on essai d'importer une fiche avec un n° déjà utilisé on prévient et on boucle
+						zenity --warning --text="La référence ${ref1} est déjà utilisée, vous ne pouvez pas choisir celle-ci."
+						ref1=""
+					}
+				else
+					{
+						break
+					}
+				fi
+			done
+			
+			## Si on à choisi d'importer ou de renommer une fiche
+			if [ "${EXIT}" == "Valider ce bien" ]; then
+				{
+					## On supprime le fichier d'aperçu rapide
+					rm -f "${rept1}/fiches/${ref}/tmp/.var-court-${ref}.txt"
+					
+					## On renomme le répertoire de la fiche avec le nouveau nom
+					mv "${rept1}/fiches/${ref}" "${rept1}/fiches/${ref1}"
+					
+					## On se place dans le répertoire de la fiche
+					cd "${rept1}/fiches/${ref1}"
+					
+					## On renome tous les fichiers de la fiche avec le nouveau nom
+					find -name "*${ref}*" -exec rename "s/${ref}/${ref1}/" \{\} \;
+					
+					## On change la référence dans tous les fichiers de données de la fiche
+					sed -i "s/${ref}/${ref1}/g" "${rept1}/fiches/${ref1}/data/.var-${ref1}.txt"
+					sed -i "s/${ref}/${ref1}/g" "${rept1}/fiches/${ref1}/data/.var-${ref1}.php"
+					sed -i "s/${ref}/${ref1}/g" "${rept1}/fiches/${ref1}/tmp/$(ls -a ${rept1}/fiches/${ref1}/tmp | grep '.id' | head -1)"
+					
+					## Par sécurité on impose la fiche comme privée
+					sed -i "s/pub=\"true\"/pub=\"false\"/g" "${rept1}/fiches/${ref1}/data/.var-${ref1}.txt"
+					sed -i "s/pub=\"true\"/pub=\"false\"/g" "${rept1}/fiches/${ref1}/data/.var-${ref1}.php"
+					
+					## On déplace la fiche vers le répertoire des fiches privées du catalogue
+					mv "${rept1}/fiches/${ref1}" "${rept}/catalogue/privees/${ref1}"
+					EXIT=""
+					
+					## Si on a choisi renommer ou supprimer et pas importer on supprime la fiche traitée du site web
+					if [ "${import}" != "oui" ]; then
+						{
+lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
+rm -rf /fiches/${ref}
+rm -rf /privees/${ref}
+quit 0
+EOF
+						}
+					fi
+					
+					timeout 60 zenity --warning --text="Tous les biens modifiés ici sont passés en privés.\n\nPENSEZ A VÉRIFIER LA CASE À COCHER -PUBLIER-\nlors de votre contrôle sur le bien.\n\nLa fenêtre suivante vous permettra d accéder à la fiche,\nfaites le ou vos modifications seront perdues."
+					tloc="$(ls -a ${rept1}/ID/ | grep '.id')"
+					echo "${ref1}" > "${rept}/conf/.tmp/${tloc}"
+					/usr/share/osagence/osagence
+					rm -f -r "${rept1}/fiches/${ref}"
+					rm -f "${rept1}/fiches/${ficzip}"
+lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
+rm /envoi/upload/${ficzip}
+quit 0
+EOF
+				}
+			elif [ "${EXIT}" == "Supprimer ce bien" ]; then
+				{
+					rm -f -r "${rept1}/fiches/${ref}"
+					
+					if [ "${import}" != "oui" ]; then
+						{
+							if [ ! -d "${rept1}/Sauvegarde_OSa/fiches_archivees" ]; then
+								{
+									mkdir -p "${rept1}/Sauvegarde_OSa/fiches_archivees"
+								}
+							fi
+							mv "${rept1}/fiches/${ficzip}" "${rept1}/Sauvegarde_OSa/fiches_archivees/$(date +%s)_${ficzip}"
+							
+lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
+rm -rf /fiches/${ref}
+rm -rf /privees/${ref}
+quit 0
+EOF
+						}
+					else
+						{
+							rm -f "${rept1}/fiches/${ficzip}"
+						}
+					fi
+lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
+rm /envoi/upload/${ficzip}
+quit 0
+EOF
+				}
+			fi
+		}
+	else
+		{
+			## Si on n'a choisi d'ignorer la fiche on supprime le fichier compressé
+			rm -f "${rept1}/fiches/${ficzip}"
+		}
+	fi
+	
+done
+

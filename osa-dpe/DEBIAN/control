@@ -1,0 +1,12 @@
+Package: osa-dpe
+Version: 0.02.01
+Section: office
+Priority: optional
+Depends: imagemagick, gtkdialog, wmctrl, zenity, xdg-utils
+Architecture: all
+Maintainer: Olivier Pont, 2aide <contact@2aide.fr>
+Installed-Size: 1200
+Homepage: http://www.agence-libre.fr
+Description: osa-dpe, un outil OSagence.
+ Création étiquettes énergétiques.
+

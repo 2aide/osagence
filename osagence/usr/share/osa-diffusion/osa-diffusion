@@ -1,0 +1,1090 @@
+#!/bin/bash
+##
+
+###################################################################################################################################################
+## Copyright (C) 2010 www.2aide.fr                                                                                                               ##
+##                                                                                                                                               ##
+## Ce programme est un logiciel libre, vous pouvez le redistribuer et / ou le modifier selon les termes de la Licence Publique Générale GNU      ##
+## telle que publiée par la Free Software Foundation; soit la version 2 de la Licence, ou (à votre choix) toute version ultérieure.              ##
+##                                                                                                                                               ##
+## Ce programme est distribué dans l'espoir qu'il sera utile, mais SANS AUCUNE GARANTIE, sans même la garantie implicite de COMMERCIALISATION    ##
+## ou D'ADAPTATION A UN USAGE PARTICULIER. Voir la Licence Publique Générale GNU, disponible ici http://www.opensource.org/licenses/gpl-2.0.php  ##
+## pour plus de détails.                                                                                                                         ##
+##                                                                                                                                               ##
+## Vous devriez avoir reçu une copie de la Licence Publique Générale GNU avec ce programme, sinon, écrivez à                                     ##
+## Free Software Foundation, Inc, 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                                                          ##
+##                                                                                                                                               ##
+##                                                                                                                                               ##
+##                                 En 2 mots, vous étes libre d'utiliser, de copier et de distribuer ce programme                                ##
+##                                  à condition de soumettre votre copie à la même licence GPL v-2 ou ultérieure                                 ##
+##                                                                                                                                               ##
+###################################################################################################################################################
+
+## Suppression du fichier temporaire
+rm -f /tmp/osa-diffusion.tmp
+## On récupère les emplacements des répertoires de travail de OSagence
+eval "$(grep 'rept1=\"' '/usr/share/osagence/osa-menu')"
+eval $(grep 'rept=\"' "${rept1}/rept/rept.cfg")
+
+## On vérifie l'existence des paramètres secrets (non fournis aux négociateurs)
+if [ ! -e "${rept}/conf/osa-sec.cfg" ]; then
+	{
+		exit 0
+	}
+fi
+
+## On récupère la variable de contrôle pour ne pas diffuser les images par défaut dans le cas ou aucune photo n'est disponible
+eval $(grep "md5_def=\"" "${rept}/conf/osa.cfg")
+eval $(grep "url=\"" "${rept}/conf/osa.cfg")
+
+## Vérification de l'existence du répertoire temporaire Poliris
+if [ ! -d "${rept1}/poliris" ]; then
+	{
+		mkdir -p "${rept1}/poliris"
+	}
+fi
+
+## vérification de la synchronisation du PC
+if [ -e /tmp/osagence-lock ]; then
+	{
+		if [ "$(cat /tmp/osagence-lock)" == "lock" ]; then
+			{
+				zenity --warning --text="La synchronization de votre PC est en cours.\nVeuillez quitter et retenter dans quelques minutes."
+			}
+		else
+			{
+				zenity --warning --text="La synchronization de votre PC est actuellement impossible.\nVérifiez votre connexion à internet."
+			}
+		fi
+		exit 0
+	}
+fi
+
+
+sync="no"
+
+## Si une diffusion programmée existe on récupére les paramètres et on synchronise, sinon on demande quoi faire
+if [ -e "${rept1}/poliris/diff-prog.txt" ]; then
+	{
+		eval $(cat "${rept1}/poliris/diff-prog.txt")
+		
+		## On écrit le fichier de configuration des photos
+		if [ "${confph}" == "Renvoie de toutes les photos" ]; then
+			{
+				echo "Mode=FULL" > "${rept1}/poliris/Photos.cfg"
+			}
+		else
+			{
+				echo "Mode=DIFF" > "${rept1}/poliris/Photos.cfg"
+			}
+		fi
+		
+		sync="oui"
+	}
+else
+	{
+		## On propose la synchronisation du PC
+		sync=""
+		zenity --question --ok-label="Synchroniser" --text="Voulez-vous synchroniser votre PC avec le site $(echo ${url} | sed 's;http://;;g' | sed 's;www\.;;g' | sed 's;/;;g') ?\nCette opération peut durer plus de $(cat ${rept1}/temps-sync.temps | sed 's;La dernière synchronisation a durée;;g')\nSi vous ne synchronisez pas, les modifications effectuées sur les autres PC\ndepuis le$(cat ${rept1}/date-sync.temps | sed 's;Dernière synchronisation de ce PC le\\n;;g' | sed 's;(.*);;g') ne seront pas diffusées." && sync="oui"
+	}
+fi
+
+if [ "${sync}" == "oui" ]; then
+	{
+		## Synchronisation avec le site web 
+					export MAIN_VIEWER_MOD_WAIT='<window title="viewer_wait_synchro" window_position="1" decorated="false">
+												<vbox>
+													<pixmap>
+													<input file>/usr/share/osagence/pixmaps/transfer.gif</input>
+													</pixmap>
+													<text>
+														<label>"La synchro. est en cours, veuillez ne pas interrompre."</label>
+													</text>
+												</vbox>
+											</window>'
+					##Lancer logo
+					gtkdialog --program=MAIN_VIEWER_MOD_WAIT&
+					
+					## lancer script de synchro
+					/usr/share/osagence/osa-sync
+					
+					## On reset l'image de pogression
+					wmctrl -c viewer_wait_synchro
+					
+					## On vérifie le bon déroulement de la synchro sinon on annule
+					if [ -e "/tmp/osagence-lock" ]; then
+						{
+							if [ "$(cat /tmp/osagence-lock)" == "fail" ]; then
+								{
+									exit 0
+								}
+							fi
+						}
+					fi
+					
+					sync=""
+					
+					timeout 10 zenity --info --text="$(cat ${rept1}/temps-sync.temps)"
+	}
+fi
+
+## Lecture de la configuration
+eval $(grep -v "^#" "${rept}/conf/poliris.cfg")
+
+## On crée le répertoire des fichiers Poliris si il n'existe pas
+if [ ! -d "${rept1}/poliris" ]; then
+	{
+		mkdir "${rept1}/poliris"
+	}
+fi
+
+## On prépare le contenu du fichier config.txt dans les fichiers de configuration
+echo "Version=@@@@@@@@" > "${rept1}/poliris/Config_cm.txt"
+echo "Application=OSagence / $(grep '## Version =' '/usr/share/osagence/osagence' | cut -d= -f2)" >> "${rept1}/poliris/Config_cm.txt"
+grep "Devise=" "${rept}/conf/poliris.cfg" >> "${rept1}/poliris/Config_cm.txt"
+
+		## On ajoute une référence non existante à la blacklist pour quelle soit non vide et quelle existe
+		echo "00000" >> "${rept}/conf/blacklist.lst"
+		## On classe les références de la blacklist et on supprime les éventuels doublons
+		sort "${rept}/conf/blacklist.lst" | uniq > "${rept}/conf/blaklist1.lst"
+		rm "${rept}/conf/blacklist.lst"
+		mv "${rept}/conf/blaklist1.lst" "${rept}/conf/blacklist.lst"
+		
+		## On ajoute une référence non existante à la whitelist pour quelle soit non vide et quelle existe
+		echo "00000" >> "${rept}/conf/whitelist.lst"
+		## On classe les références de la blacklist et on supprime les éventuels doublons
+		sort "${rept}/conf/whitelist.lst" | uniq > "${rept}/conf/whitelist1.lst"
+		rm "${rept}/conf/whitelist.lst"
+		mv "${rept}/conf/whitelist1.lst" "${rept}/conf/whitelist.lst"
+				
+		## On créé une liste de tous les biens publics
+		ls "${rept}/catalogue/fiches/" | grep -v "^a" | grep -Eo "[[:digit:]]+" | sort | uniq > "${rept}/catalogue/transfert1.lst"
+		
+		rm -f "${rept}/catalogue/transfert.lst"
+		mv "${rept}/catalogue/transfert1.lst" "${rept}/catalogue/transfert.lst"
+
+
+## Si pas de diffusion programmée on demande la configuration de diffusion 
+if [ -z "${confph}" ] || [ -z "${platefor}" ]; then
+	{
+		## On choisi le mode de transfert des photos
+		confph=$(zenity --width=400 --height=200 --list --column "" --radiolist\
+							--title="Choix du mode de transfert des photos" \
+							--text="Si vous ne savez pas laissez le mode par défaut" \
+							--column="" \
+							TRUE "Ne renvoie que les photos modifièes" \
+							FALSE "Renvoie de toutes les photos")
+							
+		## Si on quitte on supprime les fichiers déjà créés
+		if [ $? != "0" ]; then
+			{
+				rm -f "${rept1}/poliris/Photos.cfg"
+				rm -f "${rept1}/poliris/Config_cm.txt"
+				exit 0
+			}
+		fi
+							
+		## On écrit le fichier de configuration des photos
+		if [ "${confph}" == "Renvoie de toutes les photos" ]; then
+			{
+				echo "Mode=FULL" > "${rept1}/poliris/Photos.cfg"
+			}
+		else
+			{
+				echo "Mode=DIFF" > "${rept1}/poliris/Photos.cfg"
+			}
+		fi
+
+		## On sélectionne les plates-formes disponibles
+		c="1"
+		plate=(${plateformes})
+		for pla in "${plate[@]}"; do
+			eval "plat=\"\$${pla}_plat\""
+			chpla[$c]="TRUE ${pla}#${plat}"
+			((c++))
+			
+		done
+
+		## On propose la sélection des plateformes à diffuser
+		sort_chpla=$( echo ${chpla[@]} | sed -e 's/ FALSE/\nFALSE/g' )
+
+		platefor=$(zenity --width=400 --height=400 --list --column "" --checklist\
+							--title="Choix des plateformes de diffusion" \
+							--text="Choisissez le ou la plateforme de diffusion" \
+							--column="" \
+							${sort_chpla[@]} )
+							
+		## Si on quitte on supprime les fichiers déjà créés
+		if [ -z "${platefor}" ]; then
+			{
+				rm -f "${rept1}/poliris/Photos.cfg"
+				rm -f "${rept1}/poliris/Config_cm.txt"
+				exit 0
+			}
+		fi
+	}
+fi
+
+## Affiche une fenêtre pendant l'opération
+## Le gif annimé utilisé provient de http://commons.wikimedia.org/wiki/File:Planeetwielmechanisme.gif voir la page pour la licence
+						export MAIN_VIEWER_MOD_WAIT='<window title="viewer_wait_poliris" window_position="1" decorated="false">
+														<vbox>
+															<pixmap>
+															<input file>/usr/share/osa-diffusion/pixmaps/Planeetwielmechanisme.gif</input>
+															</pixmap>
+															<text>
+																<label>"Création du fichier Poliris"</label>
+															</text>
+														</vbox>
+													</window>'
+						#Lancer logo
+						gtkdialog --program=MAIN_VIEWER_MOD_WAIT&
+
+
+## On décompresse l'archive de logs
+if [ -e "${rept}/poliris/logs_diffusion.tar.gz" ]; then
+	{
+		tar -zxvf "${rept}/poliris/logs_diffusion.tar.gz" -C "${rept1}/poliris/"
+	}
+else
+	{
+		mkdir "${rept1}/poliris/logs_diffusion"
+	}
+fi
+
+## On récupère la date et l'heure pour le nommage des fichiers
+heure="$(date +%Y-%m-%d_%H-%M-%S)"
+
+## Boucle sur la liste des biens à uploader
+for upload in $(cat ${rept}/catalogue/transfert.lst);do
+
+	## Vérification de l'absence de doublon dans fiches Privées et Publiques
+	if [ -e "${rept}/catalogue/fiches/${upload}/data/.var-${upload}.txt" ] && [ -e "${rept}/catalogue/privees/${upload}/data/.var-${upload}.txt" ] ; then
+		{
+			curl -f "${url}privees/${upload}/data/.var-${upload}.php" >> /dev/null && privee="OK"
+			curl -f "${url}fiches/${upload}/data/.var-${upload}.php" >> /dev/null && fiche="OK"
+			
+			if [ "${privee}" != "OK" ] && [ "${fiche}" == "OK" ]; then
+				{
+					rm -f -r "${rept}/catalogue/privees/${upload}"
+				}
+			fi
+			
+			if [ "${privee}" == "OK" ] && [ "${fiche}" != "OK" ]; then
+				{
+					rm -f -r "${rept}/catalogue/fiches/${upload}"
+				}
+			fi
+			
+			privee=""
+			fiche=""
+		}
+	fi
+	
+	## Vérification de l'existence du bien à diffuser
+	if [ -e "${rept}/catalogue/fiches/${upload}/data/.var-${upload}.txt" ]; then
+		{
+			## On récupère les variables du bien en cours de traitement
+			eval $(cat ${rept}/catalogue/fiches/${upload}/data/.var-${upload}.txt)
+			
+			if [ "${vent}" == "true" ]; then
+				{			
+					#### On met en forme les variables conformément au format Poliris et on masque les variables à ne pas diffuser
+					# On inscrit des caractères repère en référence d'agence
+					a001="@@@@@@@@"
+					
+					## On inscrit les variables de référence du bien
+					a002="${ref}"
+					a112="${ref}"
+					
+					## On calcule le prix net vendeur
+					a011="$((${a011}+${a015}))"
+					
+					## Si l'unité de surface du terrain est exprimée en hectares on converti en m²
+					if [ "${unit}" == "hectare(s)" ];then
+						{
+							a017=$((${a017}*10000))
+						}
+					fi
+					
+					## On controle la conformité du type de chauffage
+					if [ "${a033}" == "_" ];then
+						{
+							a033=""
+						}
+					fi
+					
+					## Exclu Oui ou Non
+					if [ "${a083}" == "true" ];then
+						{
+							a083="oui"
+						}
+					else
+						{
+							a083="non"
+						}
+					fi
+					
+					## Coup de coeur Oui ou Non
+					if [ "${a084}" == "true" ];then
+						{
+							a084="oui"
+						}
+					else
+						{
+							a084="non"
+						}
+					fi
+					
+					## En copropriété Oui ou Non
+					if [ "${a258}" == "true" ];then
+						{
+							a258="oui"
+						}
+					else
+						{
+							a258="non"
+						}
+					fi
+					
+					## Syndicat copropriétaires en procédure Oui ou Non
+					if [ "${a261}" == "true" ];then
+						{
+							a261="oui"
+						}
+					else
+						{
+							a261="non"
+						}
+					fi
+					
+					## On inscrit la valeur du DPE
+					if [ "${val}" != "-1" ] && [[ "${val}" =~ ^[[:digit:]]+$ ]]; then
+						{
+							a176=$(echo "${val}" | sed 's/,/./g' |awk '{print int($1+0.5)}') 
+							
+							## On inscrit le bilan DPE en fonction de sa valeur
+							if [ "${a176}" -lt "51" ]; then
+									{
+										a177="A"
+									}
+								fi
+
+								if [ "${a176}" -gt "50" ] && [ "${a176}" -lt "91" ]; then
+									{
+										a177="B"
+									}
+								fi
+
+
+								if [ "${a176}" -gt "90" ] && [ "${a176}" -lt "151" ]; then
+									{
+										a177="C"
+									}
+								fi
+
+								if [ "${a176}" -gt "150" ] && [ "${a176}" -lt "231" ]; then
+									{
+										a177="D"
+									}
+								fi
+
+								if [ "${a176}" -gt "230" ] && [ "${a176}" -lt "331" ]; then
+									{
+										a177="E"
+									}
+								fi
+
+								if [ "${a176}" -gt "330" ] && [ "${a176}" -lt "451" ]; then
+									{
+										a177="F"
+									}
+								fi
+
+								if [ "${a176}" -gt "450" ]; then
+									{
+										a177="G"
+									}
+								fi
+							}
+						elif [ "${val}" == "-1" ]; then
+							{
+								a176=""
+								a177="VI"
+							}
+						else
+							{
+								a176=""
+								a177="NS"
+							}
+						fi
+						
+						## On inscrit la valeur du GES
+						if [ "${val1}" != "-1" ] && [[ "${val1}" =~ ^[[:digit:]]+$ ]]; then
+							{
+								a178=$(echo "${val1}" | sed 's/,/./g' |awk '{print int($1+0.5)}')
+							
+								## On inscrit le bilan GES en fonction de sa valeur
+								if [ "${a178}" -lt "6" ]; then
+									{
+										a179="A"
+									}
+								fi
+
+								if [ "${a178}" -gt "5" ] && [ "${a178}" -lt "11" ]; then
+									{
+										a179="B"
+									}
+								fi
+
+
+								if [ "${a178}" -gt "10" ] && [ "${a178}" -lt "21" ]; then
+									{
+										a179="C"
+									}
+								fi
+
+								if [ "${a178}" -gt "20" ] && [ "${a178}" -lt "36" ]; then
+									{
+										a179="D"
+									}
+								fi
+
+								if [ "${a178}" -gt "35" ] && [ "${a178}" -lt "56" ]; then
+									{
+										a179="E"
+									}
+								fi
+
+								if [ "${a178}" -gt "55" ] && [ "${a178}" -lt "81" ]; then
+									{
+										a179="F"
+									}
+								fi
+
+								if [ "${a178}" -gt "80" ]; then
+									{
+										a179="G"
+									}
+								fi
+							}
+						elif [ "${val1}" == "-1" ]; then
+							{
+								a178=""
+								a179="VI"
+							}
+						else
+							{
+								a178=""
+								a179="NS"
+							}
+						fi
+						
+						if [ "${etag}" == "<item>à l étage</item><item>Nb étages</item>" ]; then
+							{
+								a024="${floor}"
+								a025=""
+							}
+						else
+							{
+								a025="${floor}"
+								a024=""
+							}
+						fi
+					if [ "${a016}" == "0" ]; then
+						{
+							a016=""
+						}
+					fi
+					
+					if [ "${a017}" == "0" ]; then
+						{
+							a017=""
+						}
+					fi
+					
+					if [ "${a019}" == "0" ]; then
+						{
+							a019=""
+						}
+					fi
+					
+					if [ "${a024}" == "0" ]; then
+						{
+							a024=""
+						}
+					fi
+					
+					if [ "${a025}" == "0" ]; then
+						{
+							a025=""
+						}
+					fi
+					
+					if [ "${a027}" == "0" ]; then
+						{
+							a027=""
+						}
+					fi
+					
+					if [ "${a029}" == "0" ]; then
+						{
+							a029=""
+						}
+					fi
+					
+					if [ "${a031}" == "0" ]; then
+						{
+							a031=""
+						}
+					fi
+					
+					if [ "${a033}" == "0" ]; then
+						{
+							a033=""
+						}
+					fi
+					
+					if [ "${a116}" == "_" ]; then
+						{
+							a116=""
+						}
+					fi
+					
+					if [ "${a117}" == "_" ]; then
+						{
+							a117=""
+						}
+					fi
+					
+					if [ "${a120}" == "_" ]; then
+						{
+							a120=""
+						}
+					fi
+					
+					if [ "${a176}" == "-1" ]; then
+						{
+							a176=""
+							a177=""
+						}
+					fi
+					
+					if [ "${a178}" == "-1" ]; then
+						{
+							a178=""
+							a179=""
+						}
+					fi
+					
+					if [ "${a216}" == "0" ]; then
+						{
+							a216=""
+						}
+					fi
+					
+					## Ajout nom négociateur et mention Alur pour mandats charge acquéreur
+					if [ -z "${qualit}" ]; then
+						{
+							qualit="agent commercial"
+						}
+					fi
+					
+					if [ "${veacq}" == "true" ]; then
+						{
+							a256="OUI"
+							a257="$(((((${a015}*10000)/(${a011}-${a015}))/100)))"
+							if [ "$((${a011}-${a015}))" -lt "75001" ]; then
+								{
+									a021="${a021}<br>Prix de ${a011}€ incluant les honoraires d'agence de 4p.c. (minimum de 3000€) à la charge de l'acquéreur<br>Affaire suivie par $(echo ${a123} | cut -d' ' -f1), ${qualit} pour UnChezVous."
+								}
+							else
+								{
+									a021="${a021}<br>Prix de ${a011}€ incluant les honoraires d'agence de 4p.c. à la charge de l'acquéreur<br>Affaire suivie par $(echo ${a123} | cut -d' ' -f1), ${qualit} pour UnChezVous."
+								}
+							fi
+						}
+					else
+						{
+							a256="NON"
+							a257=""
+							a021="${a021}<br>Affaire suivie par $(echo ${a123} | cut -d' ' -f1), ${qualit} pour UnChezVous."
+						}
+					fi
+					a021=$(echo "${a021}" | sed 's/%/p\.c\./g')
+					
+					## On masque les données privées
+					a105=""
+					a106=""
+					a107=""
+					a108=""
+					a109=""
+					a113=""
+					a114=""
+					a115=""
+					a116=""
+					a117=""
+					a118=""
+					a119=""
+					a120=""
+					a121=""
+					a122=""
+					## a123=""
+					
+					cmpt="1"
+					## On inscrit les URL des photos dans les variables correspondantes (seulement 20 photos seront prises)
+					pol1="85"
+					pol2="164"
+					pol3="264"
+					
+					for foto in $(ls -v ${rept}/catalogue/fiches/${upload}/thumb | grep ".jpg" | grep -v "\-0.jpg" | grep -v "\-0g.jpg" | grep -v "Copy"); do
+						
+						## On exclu les images par défaut des biens n'ayant pas de photo
+						imdef="non"
+						cat "${rept}/catalogue/fiches/${upload}/${foto##*_}" | head -1 | grep "${md5_def}" >> /dev/null && imdef="oui"
+						if [ "${imdef}" == "non" ]; then
+							{
+								## la date de modif de la photo est ajoutée en paramètre dans l'URL pour que les changements de photos soient pris en compte
+								datmod=$(stat -c "%Y" "${rept}/catalogue/fiches/${upload}/${foto##*_}")
+								## On inscrit les dates dans un tableau
+								datmodtot[cmpt]="${datmod}"
+								
+								## Les 9 premières photos
+								if [ "${cmpt}" -lt "10" ] && [ ! -z "${foto}" ]; then
+									{
+										poli1="00${pol1}"
+										poli1="${poli1:(-3)}"
+										urlph=${url}fiches/${upload}/${datmod}a${foto##*_}
+										echo "a${poli1}=\"${urlph}\"" >> /tmp/osa-diffusion.tmp
+										((pol1++))
+									}
+								fi
+								
+								## Les 10 photos suivantes
+								if [ "${cmpt}" -gt "9" ] && [ "${cmpt}" -lt "21" ] && [ ! -z "${foto}" ]; then
+									{
+										poli2="00${pol2}"
+										poli2="${poli2:(-3)}"
+										urlph1=${url}fiches/${upload}/${datmod}a${foto##*_}
+										echo "a${poli2}=\"${urlph1}\"" >> /tmp/osa-diffusion.tmp
+										((pol2++))
+									}
+								fi
+								
+								## Les 10 photos suivantes
+								if [ "${cmpt}" -gt "20" ] && [ ! -z "${foto}" ]; then
+									{
+										poli3="00${pol3}"
+										poli3="${poli3:(-3)}"
+										urlph2=${url}fiches/${upload}/${datmod}a${foto##*_}
+										echo "a${poli3}=\"${urlph2}\"" >> /tmp/osa-diffusion.tmp
+										((pol3++))
+									}
+								fi
+							}
+						else
+							{
+								((cmpt-1))
+							}
+						fi
+							
+							## On stoppe après 30 photos (limitation seloger.com)
+							((cmpt++))
+							[ "${cmpt}" == "31" ] && break
+								
+					done
+					
+					## Si il y a des photos on inscrit les url dans les variables correspondantes
+					if [ -e "/tmp/osa-diffusion.tmp" ]; then
+						{
+							eval $(cat "/tmp/osa-diffusion.tmp")
+						}
+					fi
+					rm -f /tmp/osa-diffusion.tmp
+					
+					## On récupére la date de modification de la photo la plus récente du bien pour créer l'identifiant technique de l'annonce
+					a175="${a002}¤-$( echo ${datmodtot[*]} | sed -e 's/ /\n/g' | sort -n -r | head -1 )¤"
+					unset datmodtot
+					
+					## Création du fichier CSV de la liste de biens
+					for pol in `seq 1 294`; do
+							poli="00${pol}"
+							poli="${poli:(-3)}"
+							eval "zzz=\"\$a${poli}\""
+							echo -n "\"${zzz}\"!#">>"${rept1}/poliris/utf8_${heure}.tmp"
+							eval "a${poli}=\"\""
+					done
+					
+					## Saut de ligne après chaque biens
+					echo "\n" >> "${rept1}/poliris/utf8_${heure}.tmp"
+			}
+		else
+			{
+				## Si le bien n'est plus en vente on supprime la ligne
+			grep -v "${upload}" "${rept}/catalogue/transfert.lst" > "${rept}/catalogue/transfert.tmp"
+			rm "${rept}/catalogue/transfert.lst"
+			mv "${rept}/catalogue/transfert.tmp" "${rept}/catalogue/transfert.lst"
+			}
+		fi
+		}
+	else
+		{
+			## Si le bien n'existe pas on supprime la ligne
+			grep -v "${upload}" "${rept}/catalogue/transfert.lst" > "${rept}/catalogue/transfert.tmp"
+			rm "${rept}/catalogue/transfert.lst"
+			mv "${rept}/catalogue/transfert.tmp" "${rept}/catalogue/transfert.lst"
+		}
+	fi
+done
+
+## Suppression d'éventuelles lignes vides
+sed -i "/^$/d" "${rept1}/poliris/utf8_${heure}.tmp"
+
+## On converti le fichier poliris utf-8 en windows-1252
+cat "${rept1}/poliris/utf8_${heure}.tmp" > "${rept1}/poliris/annonces_blank.csv"
+
+## On supprime le fichier utf-8
+rm -f "${rept1}/poliris/utf8_${heure}.tmp"
+
+## On crée l'archive ZIP au format Poliris pour chaque plate-forme en fonction de ses spécificités
+cd "${rept1}/poliris/"
+platefor1="$(echo ${platefor} | sed 's/|/ /g')"
+platefor2=(${platefor1})
+
+## On récupére les paramètres spécifiques à chaque plate-forme
+for plateform in "${platefor2[@]}"; do
+	
+	cod_dif="$(echo ${plateform} | cut -d# -f1)"
+	eval "max=\"\$${cod_dif}_max\""
+	eval "nfich=\"\$${cod_dif}_nfich\""
+	eval "agence=\"\$${cod_dif}_agence\""
+	eval "ftpus=\"\$${cod_dif}_ftpus\""
+	eval "ftpmdp=\"\$${cod_dif}_ftpmdp\""
+	eval "ftpserv=\"\$${cod_dif}_ftpserv\""
+	eval "ftprep=\"\$${cod_dif}_ftprep\""
+	eval "Version=\"\$${cod_dif}_Version\""
+	eval "plat=\"\$${cod_dif}_plat\""
+	eval "pcperm=\"\$${cod_dif}_pcperm\""
+	eval "nbj=\"\$${cod_dif}_nbj\""
+	
+	## On inscrit le code agence de la plate-forme
+	cat "${rept1}/poliris/annonces_blank.csv" | sed "s/@@@@@@@@/${agence}/g" > "${rept1}/poliris/annonces.csv"
+	
+	## On compte le nombre d'annonces au catalogue
+	nbbien=$(wc -l "${rept1}/poliris/annonces.csv" | cut -d" " -f1)
+	
+	####################################################################
+	
+	## On vérifie que le pourcentages de biens à diffuser en permanence est inférieur à 100
+	if [ "${pcperm}" -gt "100" ]; then
+		{
+			pcperm="100"
+		}
+	fi
+	
+	## On calcule le nombre de biens à diffuser en permanence en fonction du nombre de biens autorisés et du pourcentages de biens à diffuser en permanence
+	if  [ "${max}" != "" ] && [ "${max}" -gt "0" ]; then
+		{
+			## Nombre d'annonces à diffuser en permanence
+			pcmax=$((((${max}00/100)*${pcperm})/100))
+			## Nombre d'annonces à diffuser en alternance
+			altmax=$((${max}-${pcmax}))
+		}
+	else
+		{
+			pcmax=""
+		}
+	fi
+	
+	## Si le nombre d'annonces au catalogue est supérieur au nombre autorisé au contrat avec la plateforme on opère une sélection
+	if  [ "${max}" != "" ] && [ "${nbbien}" -gt "${max}" ]; then
+		{
+			## On compte le nombre de biens blacklistés
+			nbblack=$(wc -l "${rept}/conf/blacklist.lst" | cut -d" " -f1)
+			
+			## On compte le nombre de biens dans la whiteliste
+			nbwhite=$(wc -l "${rept}/conf/whitelist.lst" | cut -d" " -f1)
+			
+			## On s'assure de l'existance d'un fichier contenant les lignes correpondantes aux biens black listés
+			touch "${rept1}/poliris/annonces_black.csv"
+			## On crée un fichier contenant tous les biens blacklistés
+			for black in $(cat ${rept}/conf/blacklist.lst);do
+				grep "#\"${black}\"!" "${rept1}/poliris/annonces.csv" >> "${rept1}/poliris/annonces_black.csv"
+				nbblack=$(wc -l "${rept1}/poliris/annonces_black.csv" | cut -d" " -f1)
+				nbbien1="$((${nbbien}-${nbblack}))"
+				if [ "${nbbien1}" = "${max}" ]; then
+					{
+						break
+					}
+				fi
+			done
+			
+			## On crée un fichier contenant tout le catalogue sans les biens blacklités
+			grep -vFxf "${rept1}/poliris/annonces_black.csv" "${rept1}/poliris/annonces.csv" > "${rept1}/poliris/annonces_tmp.csv"
+			
+			## Si le nombre de biens au catalogue moins le nombre de biens blacklisté est supérieur au nombre de biens à diffuser en permanence on opère une sélection 
+			if [ "${nbbien1}" -gt "${pcmax}" ]; then
+				{
+					## On crée un fichier contenant tous les biens de la whiteliste
+					for white in $(cat ${rept}/conf/whitelist.lst);do
+						grep "#\"${white}\"!" "${rept1}/poliris/annonces.csv" >> "${rept1}/poliris/annonces_white.tmp"
+					done
+					
+					## On trie et s'assure que les biens de la whitelist soient unique
+					sort "${rept1}/poliris/annonces_white.tmp" | uniq > "${rept1}/poliris/annonces_white.csv"
+					rm -f "${rept1}/poliris/annonces_white.tmp"
+					
+					## On compte le nombre d'annonces dans whitelist
+					nbbien2=$(wc -l "${rept1}/poliris/annonces_white.csv" | cut -d" " -f1)
+										
+					## On crée un fichier contenant tout le catalogue sans les biens blacklités ni ceux de la whitelist on trie et s'assure que les biens soient unique
+					grep -vFxf "${rept1}/poliris/annonces_white.csv" "${rept1}/poliris/annonces_tmp.csv" | sort -r | uniq > "${rept1}/poliris/annonces_tmp1.csv"
+					
+					
+					## On compte le nombre d'annonces au catalogue sans le biens blacklist ni whitelist
+					nbbien3=$(wc -l "${rept1}/poliris/annonces_tmp1.csv" | cut -d" " -f1)
+					
+					## On crée un fichier contenant les biens de la whitelist et les biens à diffuser en permanence
+					head -$((${pcmax}-${nbbien2})) "${rept1}/poliris/annonces_tmp1.csv" | sort -r > "${rept1}/poliris/annonces_white1.csv"
+					cat "${rept1}/poliris/annonces_white1.csv" >> "${rept1}/poliris/annonces_white.csv" 
+					
+					## On récupère la liste des annonces du catalogue à diffuser en alternance
+					grep -vFxf "${rept1}/poliris/annonces_white.csv" "${rept1}/poliris/annonces.csv" | sort -r | uniq > "${rept1}/poliris/annonces-alt_tmp.csv"
+					
+					## Si il existe, on lit le dernier fichier de log de diffusion de la plateforme
+					if [ -e "${rept}/poliris/.diff_${plat}.txt" ]; then
+						{
+							eval $(cat "${rept}/poliris/.diff_${plat}.txt")
+						}
+					fi
+										
+					## On calcule le nombre de jours écoulés depuis le 1/1/2014 et tenant compte des années bisextiles
+					jcalorg="$(((($(date +%Y)-2014)*365)+(($(date +%Y)-2013)/4)+$(date +%j)))"
+					
+					## Si la date de la dernière diffusion n'existe pas on met la date du jour
+					if [ -z "${jdate}" ]; then
+						{
+							jdate="${jcalorg}"
+						}
+					fi
+					
+					## Si la dernière annonce diffusée n'est pas renseignée on prend la dernière de celles en diffusion permanente
+					if [ -z "${derann}" ]; then
+						{
+							derann=$(tail -1 "${rept1}/poliris/annonces_white1.csv" | awk -F'"!#"' '{ printf $2 }')
+						}
+					fi
+					
+					## Première annonce du catalogue
+					preann=$(tail -1 "${rept1}/poliris/annonces_white1.csv" | awk -F'"!#"' '{ printf $2 }')
+					
+					## Si la dernière annonce diffusée n'existe pas ou plus on prend la suivante
+					while true
+						do
+							annprst="no"
+							
+							## Si la dernière annonce diffusée est la première du catalogue ou le n° 00000
+							if [ "${derann}" == "${preann}" ] || [ "${derann}" == "00000" ]; then
+								{
+									derann=$(head -1 "${rept1}/poliris/annonces-alt_tmp.csv" | awk -F'"!#"' '{ printf $2 }')
+									break
+								}
+							else
+								{
+									annprst=""
+									grep -q "\!#\"${derann}\"\!" "${rept1}/poliris/annonces-alt_tmp.csv" && annprst="ok"
+									if [ "${annprst}" == "ok" ]; then
+										{
+											break
+										}
+									else
+										{
+											derann1=$(($(echo "${derann}" | sed "s/^0*//g")-1))
+											derann="$(echo '00000' | cut -c1-$((5-${#derann1})))${derann1}"
+											echo "non ${derann}"
+										}
+									fi
+								}
+							fi
+						done
+					
+					## On crée le fichier des annonces à diffuser
+					awk "/\!#\"${derann}\"\!#/{i=1};i" "${rept1}/poliris/annonces-alt_tmp.csv" | head -${altmax} > "${rept1}/poliris/annonces_white2.csv"
+					cat "${rept1}/poliris/annonces_white2.csv" >> "${rept1}/poliris/annonces_white.csv"
+					
+					## On vérifie le nombre d'annonces dans le fichier des annonces
+					nbann=$(wc -l "${rept1}/poliris/annonces_white.csv" | cut -d" " -f1)
+					
+					## Si le fichier des annonces contient moins d'annonces que le nb autorisé parce que l'on à atteind la première référence on ajoute des annonces récentes pour compléter
+					if [ "${nbann}" -lt "${max}" ]; then
+						{
+							head -$((${max}-${nbann})) "${rept1}/poliris/annonces-alt_tmp.csv" >> "${rept1}/poliris/annonces_white.csv"
+						}
+					fi
+					
+					## Si nombre de jour diffusions effectives est supérieur au nombre de jour de diffusion prévues
+					if [ "$((${jcalorg}-${jdate}))" -gt "$((${nbj}-1))" ]; then 
+						{
+							## La date de la dernière diffusion à aujourd'hui
+							jdate="${jcalorg}"
+														
+							## On prend la dernière annonce diffusée en alternance comme dernière annonce diffusée
+							derann=$(tail -1 "${rept1}/poliris/annonces_white.csv" | awk -F'"!#"' '{ printf $2 }')
+							
+						}
+					fi
+					#############
+					
+					## on classe le fichier d'annonces
+					cat "${rept1}/poliris/annonces_white.csv" | sort | uniq > "${rept1}/poliris/annonces_tmp.csv"
+				}
+			fi
+			
+			## On écrit fichier de log de diffusion alternée de la plateforme
+			echo -e "derann=\"${derann}\"\njdate=\"${jdate}\"" > "${rept}/poliris/.diff_${plat}.txt"
+			
+			## On reforme le fichier définitif des annonces
+			mv "${rept1}/poliris/annonces.csv" "${rept1}/poliris/annonces-prov.csv"
+			mv "${rept1}/poliris/annonces_tmp.csv" "${rept1}/poliris/annonces.csv"
+			rm -f annonces_tmp.csv annonces_tmp1.csv
+		}
+	fi
+	
+	rm -f "${rept1}/poliris/annonces_white1.csv"
+	rm -f "${rept1}/poliris/annonces_white2.csv"				
+	rm -f "${rept1}/poliris/annonces-alt_tmp.csv"
+	
+	## On écrit le log de diffusion
+	nlog="$(date +%Y%m%d-%H_%M)"
+	
+	## Vérification/création du répertoire ID
+	if [ ! -d "${rept1}/ID" ]; then
+		{
+			mkdir -p "${rept1}/ID"
+		}
+	fi
+	
+	echo "diffusion réussie par $(ls -a ${rept1}/ID/ | grep '.id') le $(date +%c)" > "${rept1}/poliris/${nlog}_${plat}.log"
+	echo -e $(awk -F'"!#"' '{ printf $2"\\n" }' "${rept1}/poliris/annonces.csv") >> "${rept1}/poliris/${nlog}_${plat}.log" 
+	
+	## On adapte le fichier Config.txt à la plateforme
+	sed "s/@@@@@@@@/${Version}/g" "${rept1}/poliris/Config_cm.txt" > "${rept1}/poliris/Config.txt"
+	
+	## On adapte le fichier Poliris à la version supportée par la plateforme
+	if [ "${Version}" == "4.07" ]; then
+		{
+			awk -F'!#' '{ for(i=1 ; i <= 255 ; i++) { printf $i"!#" } printf "\n"}' "${rept1}/poliris/annonces.csv" > "${rept1}/poliris/annonces_407.csv"
+			rm -f "${rept1}/poliris/annonces.csv"
+			mv "${rept1}/poliris/annonces_407.csv" "${rept1}/poliris/annonces.csv"
+			sed -i 's/!#"VI"!#/!#""!#/g' "${rept1}/poliris/annonces.csv"
+			sed -i 's/!#"NS"!#/!#""!#/g' "${rept1}/poliris/annonces.csv"
+		}
+	else
+		{
+			sed -i 's/<br>Affaire suivie par.*,.*pour UnChezVous\.//g' "${rept1}/poliris/annonces.csv"
+			sed -i "s/<br>Prix de.*incluant les honoraires d'agence de.*à la charge de l'acquéreur//g" "${rept1}/poliris/annonces.csv"
+		}
+	fi
+	#sed -i 's/\\\\%/%/g' "${rept1}/poliris/annonces.csv"
+	
+	## Mode Full obligatoire pour plateforme Zilek
+	if [ "${plat}" == "Zilek" ]; then
+		{
+			mv "${rept1}/poliris/Photos.cfg" "${rept1}/poliris/Photos-prov.cfg"
+			echo "Mode=FULL" > "${rept1}/poliris/Photos.cfg"
+		}
+	fi
+	
+	## Identifiant technique
+	if [ "${plat}" == "Seloger.com" ] || [ "${plat}" == "FNAIM" ]; then
+		{
+			sed -i 's/¤.*¤//g' "${rept1}/poliris/annonces.csv"
+		}
+	else
+		{
+			sed -i 's/¤//g' "${rept1}/poliris/annonces.csv"
+		}
+	fi
+	
+	## On converti le fichier poliris utf-8 en windows-1252
+	mv "${rept1}/poliris/annonces.csv" "${rept1}/poliris/annonces-conv.csv"
+	## On change les apostrophes pour le format windows-1252
+	sed -i "s/’/'/g" "${rept1}/poliris/annonces-conv.csv"
+	iconv -f UTF-8 -t WINDOWS-1252//TRANSLIT "${rept1}/poliris/annonces-conv.csv" | sort | uniq > "${rept1}/poliris/annonces.csv"
+	
+	rm -f "${rept1}/poliris/annonces-conv.csv"
+	## on supprime le caractère saut de ligne utf-8 dans le fichier windows-1252
+	sed -i "s/\\\n//g" "${rept1}/poliris/annonces.csv"
+	
+	## On créé le fichier Poliris 
+	zip "${nfich}.zip" "annonces.csv" "Config.txt" "Photos.cfg"
+	
+	## Mode Full obligatoire pour plateforme Zilek
+	if [ "${plat}" == "Zilek" ] && [ -e "${rept1}/poliris/Photos-prov.cfg" ]; then
+		{
+			rm -f "${rept1}/poliris/Photos.cfg"
+			mv "${rept1}/poliris/Photos-prov.cfg" "${rept1}/poliris/Photos.cfg"
+		}
+	fi
+	
+	if [ -e "${rept1}/poliris/annonces-prov.csv" ]; then
+		{
+			rm -f "annonces.csv"
+			mv "${rept1}/poliris/annonces-prov.csv" "${rept1}/poliris/annonces.csv"
+		}
+	fi
+	
+	## transfert du fichier Poliris et contrôle.
+	chkdiff="ok"
+	if [ -e "${rept1}/poliris/diff-prog.txt" ]; then
+	{
+lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
+set ssl:verify-certificate no
+put -O "${ftprep}" ${nfich}.zip
+quit"
+EOF
+	}
+else
+	{
+		lftp ftp://${ftpus}:${ftpmdp}@${ftpserv}  -e "set ssl:verify-certificate no; put -O \"${ftprep}\" ${nfich}.zip; quit" || chkdiff="fail"
+	}
+fi
+	
+	## Si échec de diffusion on l'écrit dans le log de la plateforme et dans le fichier de contrôle de diffusion
+	if [ "${chkdiff}" == "fail" ]; then
+		{
+			sed -i 's/diffusion réussie/Échec de diffusion/g' "${rept1}/poliris/${nlog}_${plat}.log"
+			echo "$(echo ${plateform} | cut -d# -f2), " >> /tmp/ctrl-diff.log
+		}
+	fi
+	
+	## On ajoute le log à l'archive des logs de diffusion
+	tar -rvf "logs_diffusion/${plat}.log.tar" --add-file="${nlog}_${plat}.log"
+	rm -f "${rept1}/poliris/${nlog}_${plat}.log"
+	
+	## Suppression du fichier Poliris après transfert.
+	rm -f "${nfich}.zip"
+	
+done
+
+## On compresse les archives des logs de diffusion
+tar -zcvf "logs_diffusion.tar.gz" "logs_diffusion/"
+rm -f -r "${rept1}/poliris/logs_diffusion/"
+rm -f "${rept}/poliris/logs_diffusion.tar.gz"
+mv "${rept1}/poliris/logs_diffusion.tar.gz" "${rept}/poliris/logs_diffusion.tar.gz"
+
+## Si il y a eu des erreurs on les signale
+if [ -e "/tmp/ctrl-diff.log" ]; then
+	{
+		timeout 30 zenity --warning --text="Un problème est survenu durant la diffusion sur les platesformes $(cat /tmp/ctrl-diff.log)\nVeuillez retenter votre diffusion sur les plateformes citées."
+	}
+fi
+
+## Suppression du fichier de contrôle de diffusion
+rm -f /tmp/ctrl-diff.log
+
+## Suppression des fichiers de construction du Poliris
+rm -f "annonces.csv" "Config.txt" "Photos.cfg" "annonces_blank.csv" "annonces_white.csv" "annonces_black.csv" "Config_cm.txt"
+## On reset l'image de progression
+wmctrl -c viewer_wait_poliris
+exit 0
