@@ -1,5 +1,5 @@
 Package: osagence
-Version: 0.02.05
+Version: 0.02.06
 Section: office
 Priority: optional
 Depends: imagemagick, gtkdialog, wmctrl, lftp, zenity, xdg-utils, curl, zip, osa-dpe, osa-villes

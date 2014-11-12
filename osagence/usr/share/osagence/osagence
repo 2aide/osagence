@@ -249,6 +249,19 @@ while true
 			if [[ "${fonct}" != "nego" ]]; then
 				{
 					lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e /fiches/${ref}/ ${rept}/catalogue/fiches/${ref}/ ; mirror -e /privees/${ref}/ ${rept}/catalogue/privees/${ref}/ ; quit"
+					if [ -d "${rept}/catalogue/fiches/${ref}" ]; then
+						{
+							cd "${rept}/catalogue/fiches/${ref}"
+							find . -type f -print0 | xargs -0 chmod 664
+						}
+					fi
+					
+					if [ -d "${rept}/catalogue/privees/${ref}" ]; then
+						{
+							cd "${rept}/catalogue/privees/${ref}"
+							find . -type f -print0 | xargs -0 chmod 664
+						}
+					fi
 				}
 			fi
 			
@@ -382,6 +395,12 @@ while true
 							if [[ "${fonct}" != "nego" ]]; then
 								{
 									lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e /fiches/${choix##*/}/ ${rept}/catalogue/fiches/${choix##*/}/ ; quit"
+									if [ -d "${rept}/catalogue/fiches/${choix##*/}" ]; then
+										{
+											cd "${rept}/catalogue/fiches/${choix##*/}"
+											find . -type f -print0 | xargs -0 chmod 664
+										}
+									fi
 								}
 							fi
 							
@@ -440,6 +459,12 @@ while true
 							if [[ "${fonct}" != "nego" ]]; then
 								{
 									lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e /privees/${choix##*/}/ ${rept}/catalogue/privees/${choix##*/}/ ; quit"
+									if [ -d "${rept}/catalogue/privees/${choix##*/}" ]; then
+										{
+											cd "${rept}/catalogue/privees/${choix##*/}"
+											find . -type f -print0 | xargs -0 chmod 664
+										}
+									fi
 								}
 							fi
 			
@@ -618,7 +643,17 @@ while true
 				## on force la synchronisation si on est en multi-postes avec un répertoire partagé si utilisation de la version complète et non négociateurs
 				if [[ "${fonct}" != "nego" ]]; then
 					{
-						eval "${sync}"
+						if [ ! grep "comsync=" "${rept1}/rept/rept.cfg" ]; then
+							{
+								echo "\n## Validité oui ou non de la commande de synchronization sur ce poste\ncomsync=\"oui\"" >> "${rept1}/rept/rept.cfg"
+							}
+						fi
+						
+						if [ "${comsync}" == "oui" ]; then
+							{
+								eval "${sync}"
+							}
+						fi
 					}
 				fi
 				
@@ -972,6 +1007,8 @@ while true
 						
 						if [ -z "${exist}" ]; then
 							{
+								cd "${rept}/catalogue/fiches/${ref}"
+								find . -type f -print0 | xargs -0 chmod 664
 								lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e -R ${rept}/catalogue/fiches/${ref}/ /fiches/a${ref} ;quit"&
 								PID1=$!
 								## On crée une variable indiquant qu'un pré transfert a été effectué
@@ -2434,11 +2471,15 @@ while true
 								# Transfert final
 								if [ "${pub}" == "true" ]; then
 									{
+										cd "${rept}/catalogue/fiches/${ref}"
+										find . -type f -print0 | xargs -0 chmod 664
 										lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e -R ${rept}/catalogue/fiches/${ref}/ /fiches/${ref}/; rm -rf /privees/${ref}/  ; quit"
 										fold="fiches"
 									}
 								else
 									{
+										cd "${rept}/catalogue/privees/${ref}"
+										find . -type f -print0 | xargs -0 chmod 664
 										lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} -e "mirror -e -R ${rept}/catalogue/privees/${ref}/ /privees/${ref}/ ; rm -rf /fiches/${ref}/ ; quit"
 										fold="privees"
 									}

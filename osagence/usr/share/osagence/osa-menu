@@ -47,7 +47,7 @@ fi
 			nvrept=$(zenity --entry --entry-text="$HOME/.osagence" --title="Répertoire de travail" --text="Entrez ici le chemin du répertoire de travail de OSagence\nSauf cas particuliers, laissez la valeur par défaut.")
 			nvrept1=$( echo ${nvrept%/} | sed "s;$HOME;\$HOME;g")
 			# Création du fichier de configuration contenant le chemin du répertoire de travail
-			echo -e "# répertoire de travail à placer dans le répertoire partagé/synchronisé en cas d'utilisation multipostes ( par ex. avec Hubic )\n# /!\\ pas de / à la fin du chemin\nrept=\"${nvrept1}\"" > "${rept1}/rept/rept.cfg"
+			echo -e "# répertoire de travail à placer dans le répertoire partagé/synchronisé en cas d'utilisation multipostes ( par ex. avec Hubic )\n# /!\\ pas de / à la fin du chemin\nrept=\"${nvrept1}\"\n## Validité oui ou non de la commande de synchronization sur ce poste\ncomsync=\"oui\"" > "${rept1}/rept/rept.cfg"
 		}
 	fi
 	
@@ -493,10 +493,10 @@ do
 				}
 			fi
 			
-			sync=""
-			zenity --question --ok-label="Synchroniser" --text="Voulez-vous synchroniser ce PC avec le site Web ?\nAttention cette opération peut prendre plusieurs\ndizaines de minutes et ne doit pas être interrompue.\n${messa}" && sync="oui"
+			sync1=""
+			zenity --question --ok-label="Synchroniser" --text="Voulez-vous synchroniser ce PC avec le site Web ?\nAttention cette opération peut prendre plusieurs\ndizaines de minutes et ne doit pas être interrompue.\n${messa}" && sync1="oui"
 			
-			if [ "${sync}" == "oui" ]; then
+			if [ "${sync1}" == "oui" ]; then
 				{
 					
 					## Transfert de la fiche vers le site web (depuis un terminal pour voir la progression)
@@ -516,7 +516,7 @@ do
 					## lancer script de synchro
 					/usr/share/osagence/osa-sync
 					
-					sync=""
+					sync1=""
 					
 					
 					## On reset l'image de pogression
