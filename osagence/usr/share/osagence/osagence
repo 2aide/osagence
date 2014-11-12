@@ -643,9 +643,12 @@ while true
 				## on force la synchronisation si on est en multi-postes avec un répertoire partagé si utilisation de la version complète et non négociateurs
 				if [[ "${fonct}" != "nego" ]]; then
 					{
-						if [ ! grep "comsync=" "${rept1}/rept/rept.cfg" ]; then
+						cmdoui=""
+						grep "comsync=" "${rept1}/rept/rept.cfg" >> /dev/null && cmdoui="oui"
+						if [ "${cmdoui}" != "oui" ]; then
 							{
-								echo "\n## Validité oui ou non de la commande de synchronization sur ce poste\ncomsync=\"oui\"" >> "${rept1}/rept/rept.cfg"
+								echo -e "## Validité oui ou non de la commande de synchronization sur ce poste\ncomsync=\"oui\"" >> "${rept1}/rept/rept.cfg"
+								comsync="oui"
 							}
 						fi
 						
