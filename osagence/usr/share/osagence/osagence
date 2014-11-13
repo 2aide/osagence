@@ -2389,6 +2389,8 @@ while true
 				sed -i "s/'/’/g" ${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt
 				
 				## Traduction de la fiche produit pour le script shell en PHP
+				cd "${rept}/catalogue/fiches/${ref}/data"
+				find . -type f -print0 | xargs -0 chmod 664
 				grep '="' "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt" | grep "\"$" > "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.tmp"
 				mv "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.tmp" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.txt"
 				echo "<?php" > "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
@@ -2396,6 +2398,7 @@ while true
 				sed -i "s/^/$/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
 				sed -i "s/=\"/ = \"/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
 				sed -i "s/\$<?php/<?php/g" "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
+				find . -type f -print0 | xargs -0 chmod 664
 				echo "?>" >> "${rept}/catalogue/fiches/${ref}/data/.var-${ref}.php"
 				
 				## On récupère la liste des images présentes et on crée le code de la page web
