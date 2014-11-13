@@ -81,6 +81,13 @@ if [ "$aa" != "60" ]; then
 		## On inscrit l'heure de début pour mémoriser la durée de la synchronisation
 		time="$(date +'%H:%M')"
 
+## Mise à jour du flux RSS du site
+	if [ -n "${rssurl}" ]; then
+		{
+			curl http://${rssid}:${rssmdp}@${rssurl} >> /dev/null
+		}
+	fi
+
 ## Synchronisation
 lftp ftp://${ftpus}:${ftpmdp}@${ftpserv} << EOF
 rm /protege/pro-${id}.txt
