@@ -594,9 +594,9 @@ for upload in $(cat ${rept}/catalogue/transfert.lst);do
 						{
 							a256="OUI"
 							a257="$(((((${a015}*10000)/(${a011}-${a015}))/100)))"
-							if [ "$((${a011}-${a015}))" -lt "75001" ]; then
+							if [ "$((${a011}-${a015}))" -lt "100001" ]; then
 								{
-									a021="${a021}<br>Prix de ${a011}€ incluant les honoraires d'agence de 4p.c. (minimum de 3000€) à la charge de l'acquéreur<br>Affaire suivie par $(echo ${a123} | cut -d' ' -f1), ${qualit} pour UnChezVous."
+									a021="${a021}<br>Prix de ${a011}€ incluant les honoraires d'agence de 4p.c. (minimum de 4000€) à la charge de l'acquéreur<br>Affaire suivie par $(echo ${a123} | cut -d' ' -f1), ${qualit} pour UnChezVous."
 								}
 							else
 								{

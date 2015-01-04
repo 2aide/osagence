@@ -111,9 +111,9 @@ do
 						## Ajout nom négotiateur et mention Alur pour mandats charge acquéreur
 						if [ "${veacq}" = "true" ]; then
 							{
-								if [ "${a011}" -lt "75001" ]; then
+								if [ "${a011}" -lt "100001" ]; then
 									{
-										alur="incluant les honoraires d'agence de 4% (minimum de 3000€) à la charge de l'acquéreur."
+										alur="incluant les honoraires d'agence de 4% (minimum de 4000€) à la charge de l'acquéreur."
 									}
 								else
 									{
